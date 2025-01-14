@@ -36,7 +36,7 @@ class event_reader:
             for i1 in range(start_idx + 1, stop_idx):
                 line = self.df.iloc[i1]
                 event_line = '{} \t time {:6.1}  sample {}'.format(line['trial_type'], line['onset'], line['sample'])
-                event['interim events'] = [event_line] if event['interim events'] is None else event['interim events'] + event_line
+                event['interim events'] = [event_line] if event['interim events'] is None else event['interim events'] + [event_line]
             line = self.df.iloc[stop_idx]
             event['end'] = line['onset']
             event['end sample'] = line['sample']

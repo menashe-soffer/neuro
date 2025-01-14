@@ -48,8 +48,10 @@ class my_mne_wrapper:
 
             self.mne = mne.io.read_raw_edf(fname, preload=True, include=include_list)
 
-        if self.mne.info['sfreq'] != 500:
+        self.original_sfreq = self.mne.info['sfreq']
+        if self.original_sfreq != 500:
             self.mne.resample(500)
+
 
 
     def set_events(self, events, event_glossary):
