@@ -133,7 +133,7 @@ def plot_signals_by_chan_and_band(signal1, signal2=None, band_centers=None, bw=0
                 qmax = max(qmax, np.quantile(signal1[i_chan, i_band, smps[0]:smps[-1]+1], 0.99))
                 if signal2 is not None:
                     ax[i_chan, i_band].plot(scope_time, signal2[i_chan, i_band, smps[0]:smps[-1]+1])
-                ax[i_chan, i_band].plot([0, 0], [-1e-5, 1e-5], c='k')
+                ax[i_chan, i_band].plot([0, 0], [-1, 1], c='k')
                 #ax[i_chan, i_band].set_xlim(tscope)
                 ax[i_chan, i_band].grid(True)
 
@@ -156,15 +156,29 @@ def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, show
     num_markers = len(dbg_markers)
     ave_tscope = [-2, 10.5]
     ave_scope_smps = np.arange(start=ave_tscope[0] * fs, stop=ave_tscope[1] * fs).astype(int)
-    # scope_time = scope_smps / fs
+    ave_scope_time = ave_scope_smps / fs
+    norm_meas_mask = (ave_scope_time > -0.4) * (ave_scope_time < 0.1)
     num_markers_to_process = 26
-    band_factors = np.array(sub_centers) / sub_centers[0]
-    for i_band in range(len(band_factors)):
-        x[:, i_band] *= band_factors[i_band]
-        p[:, i_band] *= band_factors[i_band]
+    # band_factors = np.array(sub_centers) / sub_centers[0]
+    # for i_band in range(len(band_factors)):
+    #     x[:, i_band] *= band_factors[i_band]
+    #     p[:, i_band] *= band_factors[i_band]
 
     p_ave = np.zeros((p.shape[0], p.shape[1], ave_scope_smps.size))
     for i_marker, marker in enumerate(dbg_markers[:num_markers_to_process]):
+
+        # normalizing by precursor
+        smps = marker + ave_scope_smps
+        normalize_every_epoch = True
+        if normalize_every_epoch:
+            epoch_x = x[:, :, smps[0] : smps[-1] + 1]
+            epoch_p = p[:, :, smps[0] : smps[-1] + 1]
+            ave_p = epoch_p[:, :, norm_meas_mask].mean(axis=-1)
+            for i_chan in range(ave_p.shape[0]):
+                for i_band in range(ave_p.shape[1]):
+                    epoch_x[i_chan, i_band] /= np.sqrt(ave_p[i_chan, i_band])
+                    epoch_p[i_chan, i_band] /= ave_p[i_chan, i_band]
+
         # averaging
         smps = marker + ave_scope_smps
         p_ave += p[:, :, smps[0] : smps[-1] + 1] * (1 / len(dbg_markers))
