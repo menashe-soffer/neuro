@@ -101,6 +101,14 @@ def split_to_subbands1(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs
     h = scipy.signal.hilbert(output_data, axis=-1)
     p = np.real(h * np.conj(h))
 
+    # smooth p (TBD: switch)
+    ker = 1 - (np.linspace(start=-2, stop=2, num=5) / 3) ** 2
+    ker = scipy.signal.windows.hamming(11)
+    ker /= ker.sum()
+    for i0 in range(p.shape[0]):
+        for i1 in range(p.shape[1]):
+            p[i0, i1] = scipy.signal.convolve(p[i0, i1], np.ones(3)/3, mode='same')
+
     return output_data, p
 
 
@@ -116,7 +124,7 @@ def plot_signals_by_chan_and_band(signal1, signal2=None, band_centers=None, bw=0
     scope_time = scope_smps / fs
 
     #fig, ax = plt.subplots(nchans, nbands, sharex=True, sharey=True, figsize=(20, 10))
-    fig, ax = plt.subplots(5, 5, sharex=True, sharey=True, figsize=(20, 10))
+    fig, ax = plt.subplots(5, max(nbands, 2), sharex=True, sharey=True, figsize=(20, 10))
 
     smin, smax, qmin, qmax = np.inf, -np.inf, np.inf, -np.inf
 
@@ -154,11 +162,11 @@ def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, show
 
     #
     num_markers = len(dbg_markers)
-    ave_tscope = [-2, 10.5]
+    ave_tscope = [-0.6, 1.6]#[-2, 10.5]
     ave_scope_smps = np.arange(start=ave_tscope[0] * fs, stop=ave_tscope[1] * fs).astype(int)
     ave_scope_time = ave_scope_smps / fs
     norm_meas_mask = (ave_scope_time > -0.4) * (ave_scope_time < 0.1)
-    num_markers_to_process = 26
+    num_markers_to_process = 300#26
     # band_factors = np.array(sub_centers) / sub_centers[0]
     # for i_band in range(len(band_factors)):
     #     x[:, i_band] *= band_factors[i_band]
@@ -190,16 +198,22 @@ def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, show
         if plot_prefix is not None:
             fname = plot_prefix + 'marker_' + str(i_marker + 1)
             fig.savefig(fname)
+            #plt.show()
             plt.close()
             plt.clf()
             print('saved:', fname)
 
-    fig = plot_signals_by_chan_and_band(np.sqrt(p_ave), band_centers=sub_centers, bw=20, fs=500, markers=[np.argmin(np.abs(ave_scope_smps)).squeeze()], chan_names=chan_names, tscope=[-1, 2])
+    if not normalize_every_epoch:
+        for i_chan in range(p_ave.shape[0]):
+            for i_band in range(p_ave.shape[1]):
+                p_ave[i_chan, i_band] /= p_ave[i_chan, i_band, norm_meas_mask].mean(axis=-1)
+
+    fig = plot_signals_by_chan_and_band(np.sqrt(p_ave), band_centers=sub_centers, bw=20, fs=500, markers=[np.argmin(np.abs(ave_scope_smps)).squeeze()], chan_names=chan_names, tscope=[-0.6, 1.6])
     fname = plot_prefix + 'average'
     fig.savefig(fname)
     print('saved:', fname)
 
-    plt.show(block=False)
+    plt.show(block=True)
     plt.pause(0.1)
 
 

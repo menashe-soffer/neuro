@@ -33,8 +33,7 @@ for subject in subjects:
     # PATCH
     if len(paths) == 0:
         continue
-    events = event_reader(paths[0]['events'])
-    cntdwn_events = events.get_countdowns()
+    event_reader_obj = event_reader(paths[0]['events'])
 
     montage = my_montage_reader(fname=paths[0]['electrodes'])
     electrode_list = montage.get_electrode_list_by_region(region_list=region_list, hemisphere_sel=hemisphere_sel)
@@ -45,7 +44,8 @@ for subject in subjects:
 
     signals = my_mne_wrapper()
     signals.read_edf_file(fname=paths[0]['signals'], chanel_groups=electrode_list)
-    original_fs = signals.original_sfreq
+    #original_fs = signals.original_sfreq
+    event_reader_obj.align_to_sampling_rate(old_sfreq=signals.original_sfreq, new_sfreq=signals.get_mne().info['sfreq'])
     # plt.plot(signals.get_mne().times)
     # plt.show()
     signals.preprocess(powerline=60)#, passband=[60, 160])
@@ -53,32 +53,35 @@ for subject in subjects:
     if len(chan_names) == 0:
         continue
 
+    cntdwn_events = event_reader_obj.get_countdowns()
     events = np.zeros((len(cntdwn_events), 3), dtype=int)
     events[:, 0] = np.array([e['onset sample'] for e in cntdwn_events])
-    events[:, 0] = (events[:, 0] * (500 / original_fs)).astype(np.int64)
     signals.set_events(events=events, event_glossary={0: 'cntdwn'})
-    # PATCH
-    logfile_fd.write('{}  \t {}  \t  {}   ({})   fs={}\n'.format(subject, signals.get_mne().get_data().shape[-1], events[:, 0].max(),
-                                                         signals.get_mne().get_data().shape[-1] - events[:, 0].max(), original_fs))
-    logfile_fd.flush()
+
     if events[:, 0].max() > signals.get_mne().get_data().shape[-1]:
         continue
-
-    # signals.get_mne().plot(scalings='auto', duration=20, title=subject, event_id={0: 'countdown'})
-    # signals.get_mne().plot_psd()
-    # plt.show()
-    # signals.preprocess(powerline=60)#, passband=[60, 160])
-    # signals.mne.plot(scalings='auto', duration=20, title=subject, event_id={0: 'countdown'})
-    # signals.get_mne().plot_psd()
-    # plt.show()
 
     plot_folder = os.path.join(base_folder, 'plots')
     plot_prefix = os.path.join(plot_folder, subject + '_')
     MAX_CHANS_TO_PROCESS = 5
-    calc_HFB(signals.get_mne().get_data()[:MAX_CHANS_TO_PROCESS], show_dbg=True, dbg_markers=events[:, 0], chan_names=[subject + '\n' + c for c in chan_names], plot_prefix=plot_prefix)
+    # calc_HFB(signals.get_mne().get_data()[:MAX_CHANS_TO_PROCESS], show_dbg=True, dbg_markers=events[:, 0], chan_names=[subject + '\n' + c for c in chan_names],
+    #         sub_centers=[77.5], subs_bw=75, plot_prefix=plot_prefix)
+
+    ###
+    ## now process word practice events
+    word_events = event_reader_obj.get_word_events()
+    events = np.zeros((len(word_events), 3), dtype=int)
+    events[:, 0] = np.array([e['onset sample'] for e in word_events])
+
+    if events[:, 0].max() > signals.get_mne().get_data().shape[-1]:
+        continue
+
+    calc_HFB(signals.get_mne().get_data()[:MAX_CHANS_TO_PROCESS], show_dbg=True, dbg_markers=events[:, 0], chan_names=[subject + '\n' + c for c in chan_names], plot_prefix=plot_prefix + '__')
+    ###
+    ###
 
 
-    epochs = mne.Epochs(signals.get_mne(), event_id=['cntdwn'], tmin=-1.5, tmax=10.5)
+    #epochs = mne.Epochs(signals.get_mne(), event_id=['cntdwn'], tmin=-1.5, tmax=10.5)
 
     continue
 
