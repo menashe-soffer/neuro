@@ -103,6 +103,16 @@ class event_reader:
 
 
 
+    def get_statistics(self):
+
+        cnt_CNTDWN = (self.df['trial_type'] == 'COUNTDOWN_START').values.sum()
+        cnt_WORD = (self.df['trial_type'] == 'WORD').values.sum()
+        stat = {'total events': self.df.shape[0], 'last onset': self.df['onset'].values[-1], 'cntdwns': cnt_CNTDWN, 'words': cnt_WORD}
+
+        return stat
+
+
+
 
         # word_dictionary = self.df['item_name'][prectice_event_ids].tolist()
         # word_dictionary = dict()

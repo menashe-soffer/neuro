@@ -9,6 +9,7 @@ from event_reader import event_reader
 from my_montage_reader import my_montage_reader
 from my_mne_wrapper import my_mne_wrapper
 from my_subband_processings import calc_HFB
+from my_tfr_wrapper_1 import calc_tfr
 
 
 base_folder = 'E:/ds004789-download'
@@ -34,6 +35,9 @@ for subject in subjects:
     if len(paths) == 0:
         continue
     event_reader_obj = event_reader(paths[0]['events'])
+    # print(subject, event_reader_obj.get_statistics())
+    # continue
+
 
     montage = my_montage_reader(fname=paths[0]['electrodes'])
     electrode_list = montage.get_electrode_list_by_region(region_list=region_list, hemisphere_sel=hemisphere_sel)
@@ -64,8 +68,10 @@ for subject in subjects:
     plot_folder = os.path.join(base_folder, 'plots')
     plot_prefix = os.path.join(plot_folder, subject + '_')
     MAX_CHANS_TO_PROCESS = 5
-    # calc_HFB(signals.get_mne().get_data()[:MAX_CHANS_TO_PROCESS], show_dbg=True, dbg_markers=events[:, 0], chan_names=[subject + '\n' + c for c in chan_names],
-    #         sub_centers=[77.5], subs_bw=75, plot_prefix=plot_prefix)
+    sub_centers, subs_bw = [45, 55, 65, 75, 85, 95], 10#[70, 90, 110, 130, 150], 20#[77.5], 75#[45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95], 5#
+    calc_HFB(signals.get_mne().get_data()[:MAX_CHANS_TO_PROCESS], dbg_markers=events[:, 0], chan_names=[subject + '\n' + c for c in chan_names],
+            sub_centers=sub_centers, subs_bw=subs_bw, tscope=[-1, 10], plot_prefix=plot_prefix)
+    # calc_tfr(signals.get_mne(), fs=500, events=events, span=[-1, 2], chan_names=None, plot_prefix=None)
 
     ###
     ## now process word practice events
@@ -76,7 +82,8 @@ for subject in subjects:
     if events[:, 0].max() > signals.get_mne().get_data().shape[-1]:
         continue
 
-    calc_HFB(signals.get_mne().get_data()[:MAX_CHANS_TO_PROCESS], show_dbg=True, dbg_markers=events[:, 0], chan_names=[subject + '\n' + c for c in chan_names], plot_prefix=plot_prefix + '__')
+    # calc_HFB(signals.get_mne().get_data()[:MAX_CHANS_TO_PROCESS], dbg_markers=events[:, 0], chan_names=[subject + '\n' + c for c in chan_names],
+    #          sub_centers=sub_centers, subs_bw=subs_bw, tscope=[-0.6, 1.6], plot_prefix=plot_prefix + '__')
     ###
     ###
 

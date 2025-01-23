@@ -44,22 +44,10 @@ def split_to_subbands(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=
     # power
     p = np.real(x * np.conj(x))
 
-    # visualizing
-    if show_dbg:
-        fig, ax = plt.subplots(6, 1, sharex=True, sharey=True)
-        legstr = ['band ' + str(i+1) for i in range(len(sub_centers))]
-        tscale = np.arange(p.shape[-1]) / fs
-        ythd = p.max() * 0.1
-        for i_chan in range(min(6, num_chans)):
-            #ax[i_chan].plot(np.real(hx[i_chan]).T)
-            ax[i_chan].plot(tscale, p[:, i_chan].T)
-            ax[i_chan].grid(True)
-            ax[i_chan].set_ylim([-0.1*ythd, ythd])
-            #ax[i_chan].legend(legstr, loc='right')
-            if dbg_markers is not None:
-                for smp in dbg_markers:
-                    ax[i_chan].plot([smp/fs, smp/fs], [-0.1*ythd, 0.5*ythd], c='k')
-    plt.show()
+    # 10ms averaging window
+    k_len = int(fs * 10 / 1000)
+    k = np.ones(k_len) / k_len
+    p = np.convolve(p, k, mode='same')
 
     return x, p
 
@@ -73,7 +61,13 @@ def split_to_subbands1(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs
     tband = subs_bw / 8 # size of transition band
     filters = []
     ntaps = 77
-    #fig, ax = plt.subplots(1, 5)
+    ntaps = int(3 * fs / subs_bw)
+    ntaps = ntaps + (ntaps % 2) + 1
+
+
+    plot_responces = False
+    if plot_responces:
+        fig, ax = plt.subplots(1, len(sub_centers))
 
     for i_center, center in enumerate(sub_centers):
 
@@ -82,15 +76,18 @@ def split_to_subbands1(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs
         fir_remez = scipy.signal.remez(ntaps, bands, desired[::2], fs=fs)
         fir_firwin2 = scipy.signal.firwin2(ntaps, bands, desired, fs=fs)
 
-    #     for b in [fir_firls, fir_remez, fir_firwin2]:
-    #         freq, response = scipy.signal.freqz(b, 1, fs=fs)
-    #         ax[i_center].plot(freq, 20 * np.log10(np.maximum(np.abs(response), 1e-5)))
-    #     ax[i_center].grid(True)
-    #     ax[i_center].legend(['firls', 'remez', 'firwin2', 'firwin'])
-    # plt.show()
+        if plot_responces:
+            for b in [fir_firls, fir_remez, fir_firwin2]:
+                freq, response = scipy.signal.freqz(b, 1, fs=fs)
+                ax[i_center].plot(freq, 20 * np.log10(np.maximum(np.abs(response), 1e-5)))
+            ax[i_center].grid(True)
+            ax[i_center].legend(['firls', 'remez', 'firwin2', 'firwin'])
 
         # using the commented-out visualizing code, I have chossen firls
         filters.append(fir_firls)
+
+    if plot_responces:
+        plt.show()
 
     nbands = len(sub_centers)
     nchans, nsamps = data.shape
@@ -101,19 +98,19 @@ def split_to_subbands1(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs
     h = scipy.signal.hilbert(output_data, axis=-1)
     p = np.real(h * np.conj(h))
 
-    # smooth p (TBD: switch)
-    ker = 1 - (np.linspace(start=-2, stop=2, num=5) / 3) ** 2
-    ker = scipy.signal.windows.hamming(11)
-    ker /= ker.sum()
-    for i0 in range(p.shape[0]):
-        for i1 in range(p.shape[1]):
-            p[i0, i1] = scipy.signal.convolve(p[i0, i1], np.ones(3)/3, mode='same')
+    # # smooth p (TBD: switch)
+    # ker = 1 - (np.linspace(start=-2, stop=2, num=5) / 3) ** 2
+    # ker = scipy.signal.windows.hamming(11)
+    # ker /= ker.sum()
+    # for i0 in range(p.shape[0]):
+    #     for i1 in range(p.shape[1]):
+    #         p[i0, i1] = scipy.signal.convolve(p[i0, i1], np.ones(3)/3, mode='same')
 
     return output_data, p
 
 
 
-def plot_signals_by_chan_and_band(signal1, signal2=None, band_centers=None, bw=0, fs=500, markers=None, chan_names=None, tscope=[-1, 2]):
+def plot_signals_by_chan_and_band(signal1, signal2=None, avgsignal=None, band_centers=None, bw=0, fs=500, markers=None, chan_names=None, tscope=[-1, 2], ovrd_ylim=None):
 
     nchans, nbands, nsamps = signal1.shape
     if signal2 is not None:
@@ -124,7 +121,7 @@ def plot_signals_by_chan_and_band(signal1, signal2=None, band_centers=None, bw=0
     scope_time = scope_smps / fs
 
     #fig, ax = plt.subplots(nchans, nbands, sharex=True, sharey=True, figsize=(20, 10))
-    fig, ax = plt.subplots(5, max(nbands, 2), sharex=True, sharey=True, figsize=(20, 10))
+    fig, ax = plt.subplots(5, max(nbands + (avgsignal is not None), 2), sharex=True, sharey=True, figsize=(20, 10))
 
     smin, smax, qmin, qmax = np.inf, -np.inf, np.inf, -np.inf
 
@@ -141,9 +138,16 @@ def plot_signals_by_chan_and_band(signal1, signal2=None, band_centers=None, bw=0
                 qmax = max(qmax, np.quantile(signal1[i_chan, i_band, smps[0]:smps[-1]+1], 0.99))
                 if signal2 is not None:
                     ax[i_chan, i_band].plot(scope_time, signal2[i_chan, i_band, smps[0]:smps[-1]+1])
-                ax[i_chan, i_band].plot([0, 0], [-1, 1], c='k')
+                ax[i_chan, i_band].plot([0, 0], [-10, 10], c='k')
                 #ax[i_chan, i_band].set_xlim(tscope)
                 ax[i_chan, i_band].grid(True)
+            if avgsignal is not None:
+                assert type(avgsignal) == type([])
+                ax[i_chan, -1].plot(scope_time, avgsignal[0][i_chan, smps[0]:smps[-1] + 1], c='k')
+                ax[i_chan, -1].grid(True)
+                if len(avgsignal) > 1:
+                    ax[i_chan, -1].plot(scope_time, avgsignal[0][i_chan, smps[0]:smps[-1] + 1]  - avgsignal[1][i_chan, smps[0]:smps[-1] + 1], c='b', linestyle=':')
+                    ax[i_chan, -1].plot(scope_time, avgsignal[0][i_chan, smps[0]:smps[-1] + 1]  + avgsignal[1][i_chan, smps[0]:smps[-1] + 1], c='b', linestyle=':')
 
         # set plot span
         qspan = qmax - qmin
@@ -151,18 +155,20 @@ def plot_signals_by_chan_and_band(signal1, signal2=None, band_centers=None, bw=0
         smax = min(smax, qmax + 0.2 * qspan) + 0.02 * qspan
         for i_chan in range(nchans):
             ax[i_chan, 0].set_ylabel(chan_names[i_chan])
-            ax[i_chan, i_band].set_ylim([smin, smax])
+            if ovrd_ylim is None:
+                ax[i_chan, i_band].set_ylim([smin, smax])
+            else:
+                ax[i_chan, i_band].set_ylim([min(ovrd_ylim), max(ovrd_ylim)])
 
     return fig
 
 
-def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, show_dbg=False, dbg_markers=None, chan_names=None, plot_prefix=None):
+def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, tscope=[-0.6, 1.6], dbg_markers=None, chan_names=None, plot_prefix=None):
 
     x, p = split_to_subbands1(data, sub_centers=sub_centers, subs_bw=subs_bw, fs=fs, show_dbg=False, dbg_markers=dbg_markers)
 
-    #
     num_markers = len(dbg_markers)
-    ave_tscope = [-0.6, 1.6]#[-2, 10.5]
+    ave_tscope = tscope#[-0.6, 1.6]#[-2, 10.5]
     ave_scope_smps = np.arange(start=ave_tscope[0] * fs, stop=ave_tscope[1] * fs).astype(int)
     ave_scope_time = ave_scope_smps / fs
     norm_meas_mask = (ave_scope_time > -0.4) * (ave_scope_time < 0.1)
@@ -172,7 +178,10 @@ def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, show
     #     x[:, i_band] *= band_factors[i_band]
     #     p[:, i_band] *= band_factors[i_band]
 
-    p_ave = np.zeros((p.shape[0], p.shape[1], ave_scope_smps.size))
+    p_ave = np.zeros((p.shape[0], p.shape[1], ave_scope_smps.size)) # average over epochs
+    grand_p_ave = np.zeros((p.shape[0], ave_scope_smps.size)) # average over bands and epochs
+    grand_p_ave_sqr = np.zeros(grand_p_ave.shape) # for calculating standad deviation
+
     for i_marker, marker in enumerate(dbg_markers[:num_markers_to_process]):
 
         # normalizing by precursor
@@ -187,13 +196,19 @@ def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, show
                     epoch_x[i_chan, i_band] /= np.sqrt(ave_p[i_chan, i_band])
                     epoch_p[i_chan, i_band] /= ave_p[i_chan, i_band]
 
+        # PATCH
+        p_bandavg = p.mean(axis=1)
+        grand_p_ave += p_bandavg[:, smps[0] : smps[-1] + 1] * (1 / len(dbg_markers))
+        grand_p_ave_sqr += (p_bandavg[:, smps[0] : smps[-1] + 1] ** 2) * (1 / len(dbg_markers))
+        #
+
         # averaging
         smps = marker + ave_scope_smps
         p_ave += p[:, :, smps[0] : smps[-1] + 1] * (1 / len(dbg_markers))
 
         # plotting non-averaged signal
         #print('going to create fig for marker', i_marker)
-        fig = plot_signals_by_chan_and_band(x, signal2=np.sqrt(p), band_centers=sub_centers, bw=20, fs=500, markers=[marker], chan_names=chan_names, tscope=[-1, 2])
+        fig = plot_signals_by_chan_and_band(x, signal2=np.sqrt(p), avgsignal=[p_bandavg], band_centers=sub_centers, bw=20, fs=500, markers=[marker], chan_names=chan_names, tscope=tscope)
         fig.suptitle('marker ({})  at {:7.2f}'.format(i_marker + 1, marker / fs))
         if plot_prefix is not None:
             fname = plot_prefix + 'marker_' + str(i_marker + 1)
@@ -203,12 +218,20 @@ def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, show
             plt.clf()
             print('saved:', fname)
 
-    if not normalize_every_epoch:
+    # final processing
+    grand_p_ave_var = grand_p_ave_sqr - grand_p_ave ** 2
+    sem = np.sqrt(grand_p_ave_var / len(dbg_markers))
+
+    if True: #not normalize_every_epoch:
         for i_chan in range(p_ave.shape[0]):
             for i_band in range(p_ave.shape[1]):
-                p_ave[i_chan, i_band] /= p_ave[i_chan, i_band, norm_meas_mask].mean(axis=-1)
+                nf = p_ave[i_chan, i_band, norm_meas_mask].mean(axis=-1)
+                p_ave[i_chan, i_band] /= nf
+                sem /= nf
 
-    fig = plot_signals_by_chan_and_band(np.sqrt(p_ave), band_centers=sub_centers, bw=20, fs=500, markers=[np.argmin(np.abs(ave_scope_smps)).squeeze()], chan_names=chan_names, tscope=[-0.6, 1.6])
+    fig = plot_signals_by_chan_and_band(np.sqrt(p_ave), avgsignal=[grand_p_ave, sem], band_centers=sub_centers, bw=20, fs=500, markers=[np.argmin(np.abs(ave_scope_smps)).squeeze()],
+                                        chan_names=chan_names, tscope=tscope, ovrd_ylim=[0.8, 2.2])
+    fig.suptitle('avg. over {} events'.format(len(dbg_markers)))
     fname = plot_prefix + 'average'
     fig.savefig(fname)
     print('saved:', fname)
