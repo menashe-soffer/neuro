@@ -4,53 +4,6 @@ import matplotlib.pyplot as plt # necessary for debug
 import time
 
 
-def split_to_subbands(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, show_dbg=False, dbg_markers=None):
-
-    num_chans = data.shape[0]
-
-    # translate to analitic signal (hilbert transform)
-    print('hilbert tranform ...  ', end=" ")
-    tstart = time.time()
-    hx = scipy.signal.hilbert(data, axis=1)
-    tend = time.time()
-    print(tend - tstart)
-
-    # split to sub-bands
-    # the filter
-    flen = int(4 * fs / subs_bw + 2)
-    flen += flen % 2 # to have even number of taps
-    b = scipy.signal.firwin(numtaps=flen, cutoff=subs_bw/2, fs=500)
-    # the result array
-    x = np.zeros((len(sub_centers), num_chans, data.shape[-1]), dtype=np.complex_)
-
-    # filtering each sub-band
-    for i_sub in range(len(sub_centers)):
-        print('creating sub-band', i_sub, end=' ')
-        tstart = time.time()
-        mod = np.exp((-1j * 2 * np.pi / 500) * sub_centers[i_sub] * np.arange(hx.shape[-1]))
-        t = hx * mod
-        # #
-        # t[:, :] = 1
-        # t[:, 5000] = 1e3
-        # #
-        x[i_sub] = (scipy.signal.filtfilt(b, 1, np.real(t)) + 1j * scipy.signal.filtfilt(b, 1, np.imag(t)))
-        tend = time.time()
-        print(tend - tstart)
-
-    # clearing the transients
-    x[:, :, :2 * flen] = 0
-    x[:, :, -2 * flen:] = 0
-
-    # power
-    p = np.real(x * np.conj(x))
-
-    # 10ms averaging window
-    k_len = int(fs * 10 / 1000)
-    k = np.ones(k_len) / k_len
-    p = np.convolve(p, k, mode='same')
-
-    return x, p
-
 
 def split_to_subbands1(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, show_dbg=False, dbg_markers=None):
 
@@ -98,19 +51,19 @@ def split_to_subbands1(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs
     h = scipy.signal.hilbert(output_data, axis=-1)
     p = np.real(h * np.conj(h))
 
-    # # smooth p (TBD: switch)
-    # ker = 1 - (np.linspace(start=-2, stop=2, num=5) / 3) ** 2
-    # ker = scipy.signal.windows.hamming(11)
-    # ker /= ker.sum()
-    # for i0 in range(p.shape[0]):
-    #     for i1 in range(p.shape[1]):
-    #         p[i0, i1] = scipy.signal.convolve(p[i0, i1], np.ones(3)/3, mode='same')
+    # 10ms averaging window
+    k_len = int(fs * 10 / 1000)
+    k = np.ones(k_len) / k_len
+    for i1 in range(p.shape[0]):
+        for i2 in range(p.shape[1]):
+            p[i1, i2] = np.convolve(p[i1, i2], k, mode='same')
 
     return output_data, p
 
 
 
-def plot_signals_by_chan_and_band(signal1, signal2=None, avgsignal=None, band_centers=None, bw=0, fs=500, markers=None, chan_names=None, tscope=[-1, 2], ovrd_ylim=None):
+def plot_signals_by_chan_and_band(signal1, signal2=None, avgsignal=None, plot_only_avg=False,
+                                  band_centers=None, bw=0, fs=500, markers=None, chan_names=None, tscope=[-1, 2], ovrd_ylim=None):
 
     nchans, nbands, nsamps = signal1.shape
     if signal2 is not None:
@@ -121,7 +74,9 @@ def plot_signals_by_chan_and_band(signal1, signal2=None, avgsignal=None, band_ce
     scope_time = scope_smps / fs
 
     #fig, ax = plt.subplots(nchans, nbands, sharex=True, sharey=True, figsize=(20, 10))
-    fig, ax = plt.subplots(5, max(nbands + (avgsignal is not None), 2), sharex=True, sharey=True, figsize=(20, 10))
+    ncols = nbands + (avgsignal is not None) if not plot_only_avg else 1
+    fig, ax = plt.subplots(5, ncols, sharex=True, sharey=True, figsize=(20, 10))
+    ax = ax.reshape(5, ncols)
 
     smin, smax, qmin, qmax = np.inf, -np.inf, np.inf, -np.inf
 
@@ -130,17 +85,18 @@ def plot_signals_by_chan_and_band(signal1, signal2=None, avgsignal=None, band_ce
         for i_chan in range(nchans):
             ax[i_chan, 0].set_ylabel(chan_names[i_chan])
             for i_band in range(nbands):
-                ax[-1, i_band].set_xlabel(str(band_centers[i_band] - bw/2) + '  -  ' + str(band_centers[i_band] + bw/2))
-                ax[i_chan, i_band].plot(scope_time, signal1[i_chan, i_band, smps[0]:smps[-1]+1])
-                smin = min(smin, signal1[i_chan, i_band, smps[0]:smps[-1]+1].min())
-                qmin = min(qmin, np.quantile(signal1[i_chan, i_band, smps[0]:smps[-1]+1], 0.01))
-                smax = max(smax, signal1[i_chan, i_band, smps[0]:smps[-1]+1].max())
-                qmax = max(qmax, np.quantile(signal1[i_chan, i_band, smps[0]:smps[-1]+1], 0.99))
-                if signal2 is not None:
-                    ax[i_chan, i_band].plot(scope_time, signal2[i_chan, i_band, smps[0]:smps[-1]+1])
-                ax[i_chan, i_band].plot([0, 0], [-10, 10], c='k')
-                #ax[i_chan, i_band].set_xlim(tscope)
-                ax[i_chan, i_band].grid(True)
+                if not plot_only_avg:
+                    ax[-1, i_band].set_xlabel(str(band_centers[i_band] - bw/2) + '  -  ' + str(band_centers[i_band] + bw/2))
+                    ax[i_chan, i_band].plot(scope_time, signal1[i_chan, i_band, smps[0]:smps[-1]+1])
+                    smin = min(smin, signal1[i_chan, i_band, smps[0]:smps[-1]+1].min())
+                    qmin = min(qmin, np.quantile(signal1[i_chan, i_band, smps[0]:smps[-1]+1], 0.01))
+                    smax = max(smax, signal1[i_chan, i_band, smps[0]:smps[-1]+1].max())
+                    qmax = max(qmax, np.quantile(signal1[i_chan, i_band, smps[0]:smps[-1]+1], 0.99))
+                    if signal2 is not None:
+                        ax[i_chan, i_band].plot(scope_time, signal2[i_chan, i_band, smps[0]:smps[-1]+1])
+                    ax[i_chan, i_band].plot([0, 0], [-10, 10], c='k')
+                    #ax[i_chan, i_band].set_xlim(tscope)
+                    ax[i_chan, i_band].grid(True)
             if avgsignal is not None:
                 assert type(avgsignal) == type([])
                 ax[i_chan, -1].plot(scope_time, avgsignal[0][i_chan, smps[0]:smps[-1] + 1], c='k')
@@ -156,14 +112,14 @@ def plot_signals_by_chan_and_band(signal1, signal2=None, avgsignal=None, band_ce
         for i_chan in range(nchans):
             ax[i_chan, 0].set_ylabel(chan_names[i_chan])
             if ovrd_ylim is None:
-                ax[i_chan, i_band].set_ylim([smin, smax])
+                ax[i_chan, 0].set_ylim([smin, smax])
             else:
-                ax[i_chan, i_band].set_ylim([min(ovrd_ylim), max(ovrd_ylim)])
+                ax[i_chan, 0].set_ylim([min(ovrd_ylim), max(ovrd_ylim)])
 
     return fig
 
 
-def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, tscope=[-0.6, 1.6], dbg_markers=None, chan_names=None, plot_prefix=None):
+def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, tscope=[-0.6, 1.6], dbg_markers=None, chan_names=None, plot_prefix=None, gen_plots=True):
 
     x, p = split_to_subbands1(data, sub_centers=sub_centers, subs_bw=subs_bw, fs=fs, show_dbg=False, dbg_markers=dbg_markers)
 
@@ -208,15 +164,16 @@ def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, tsco
 
         # plotting non-averaged signal
         #print('going to create fig for marker', i_marker)
-        fig = plot_signals_by_chan_and_band(x, signal2=np.sqrt(p), avgsignal=[p_bandavg], band_centers=sub_centers, bw=20, fs=500, markers=[marker], chan_names=chan_names, tscope=tscope)
-        fig.suptitle('marker ({})  at {:7.2f}'.format(i_marker + 1, marker / fs))
-        if plot_prefix is not None:
-            fname = plot_prefix + 'marker_' + str(i_marker + 1)
-            fig.savefig(fname)
-            #plt.show()
-            plt.close()
-            plt.clf()
-            print('saved:', fname)
+        if gen_plots:
+            fig = plot_signals_by_chan_and_band(x, signal2=np.sqrt(p), avgsignal=[p_bandavg], band_centers=sub_centers, bw=20, fs=500, markers=[marker], chan_names=chan_names, tscope=tscope)
+            fig.suptitle('marker ({})  at {:7.2f}'.format(i_marker + 1, marker / fs))
+            if plot_prefix is not None:
+                fname = plot_prefix + 'marker_' + str(i_marker + 1)
+                fig.savefig(fname)
+                #plt.show()
+                plt.close()
+                plt.clf()
+                print('saved:', fname)
 
     # final processing
     grand_p_ave_var = grand_p_ave_sqr - grand_p_ave ** 2
@@ -229,15 +186,19 @@ def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, tsco
                 p_ave[i_chan, i_band] /= nf
                 sem /= nf
 
-    fig = plot_signals_by_chan_and_band(np.sqrt(p_ave), avgsignal=[grand_p_ave, sem], band_centers=sub_centers, bw=20, fs=500, markers=[np.argmin(np.abs(ave_scope_smps)).squeeze()],
-                                        chan_names=chan_names, tscope=tscope, ovrd_ylim=[0.8, 2.2])
-    fig.suptitle('avg. over {} events'.format(len(dbg_markers)))
-    fname = plot_prefix + 'average'
-    fig.savefig(fname)
-    print('saved:', fname)
+    if gen_plots:
+        fig = plot_signals_by_chan_and_band(np.sqrt(p_ave), avgsignal=[grand_p_ave, sem], plot_only_avg=True,
+                                            band_centers=sub_centers, bw=20, fs=500, markers=[np.argmin(np.abs(ave_scope_smps)).squeeze()],
+                                            chan_names=chan_names, tscope=tscope, ovrd_ylim=[0.8, 2.2])
+        fig.suptitle('avg. over {} events'.format(len(dbg_markers)))
+        fname = plot_prefix + 'average'
+        fig.savefig(fname)
+        print('saved:', fname)
 
-    plt.show(block=True)
-    plt.pause(0.1)
+        plt.show(block=False)
+        plt.pause(0.1)
+
+    return np.sqrt(p_ave), grand_p_ave, sem
 
 
 
