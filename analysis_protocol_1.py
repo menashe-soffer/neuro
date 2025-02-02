@@ -60,11 +60,11 @@ def make_data_availability_list(base_folder, region_list, hemisphere_sel):
     df = pd.DataFrame.from_dict(data).T
     # "flatening" the contact counts - failed to do it so I made it flat in the first place
     writer = pd.ExcelWriter('E:/ds004789-download/data_availability_for_protocol_1.xlsx', engine='xlsxwriter')
-    df.to_excel(writer)
+    df.to_excel(writer, sheet_name='.'.join([r[::2][:4] for r in region_list])[:31])
     writer.close()
 
 
-def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], timebin_sec=0.5, avg=6, in_session_gap=13, mode='monopolar', scan_files_only=True):
+def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], timebin_sec=0.5, avg=6, in_session_gap=13, mode='monopolar', scan_files_only=True, display_span=3):
 
     # configurations for the sub=band processor
     # generate the sub-band spec for the processing
@@ -98,7 +98,7 @@ def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], ti
         admit_list = np.argwhere([e['onset sample'] > 500 for e in cntdwns]).squeeze()
         cntdwns = [cntdwns[i] for i in admit_list]
         #
-        if len(cntdwns) >= 26:#avg + in_session_gap:
+        if len(cntdwns) == 26:#avg + in_session_gap:
             cntdwn_list.append(cntdwns)
     if len(cntdwn_list) < 2:
         rc = 'not enough valid sessions for {} {}'.format(subject, group)
@@ -115,7 +115,7 @@ def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], ti
         signals.preprocess(powerline=60)#, passband=[60, 160])
         #
         chan_names = signals.get_mne().info['ch_names']
-        if len(chan_names) <= 1:
+        if len(chan_names) < 4:
             rc = 'not enough channels for {} {}'.format(subject, group)
             #print(rc)
             return rc, None
@@ -150,6 +150,10 @@ def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], ti
                 desc_list[-1].append(path['signals'][path['signals'].find('ses'):][:5] + '  events {} - {}'.format(eidx[0], eidx[1]))
                 eidx += in_session_gap
 
+        MAX_SESSIONS_TO_PROCESS = 3
+        if len(desc_list) >= MAX_SESSIONS_TO_PROCESS:
+            continue
+
 
     rc = '{}   {} contacts   {} channels   {} sessions'.format(subject, num_contacts, len(chan_names), len(cntdwn_list))
 
@@ -163,7 +167,7 @@ def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], ti
         for i_ses in range(4):
             for i_pos in range(2):
                 if i_ses < len(desc_list):
-                    sns.heatmap(p_list[i_ses][i_pos], ax=ax[i_pos, i_ses], vmin=0.0, vmax=3.0, cbar=False, square=False,
+                    sns.heatmap(p_list[i_ses][i_pos], ax=ax[i_pos, i_ses], vmin=0.0, vmax=display_span, cbar=False, square=False,
                                 yticklabels=np.arange(len(chan_names)), xticklabels=(np.arange(start=-1, stop=20) + 0.5) / 2)
                     ax[i_pos, i_ses].set_xlabel(desc_list[i_ses][i_pos])
                 else:
@@ -174,105 +178,242 @@ def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], ti
         return rc, dict({'p': p_list, 'sem': sem_list, 'desc': desc_list, 'fig': fig})
 
 
+def run_analysis_protocol_1(subject_list, mode='bipolar', avg_depth=8, ovld_thd=4):
+    display_span = ovld_thd * 0.75
 
+    logfile_name = os.path.join(base_folder, 'logfile.txt')
+    logfile_fd = open(logfile_name, 'wt')
 
+    for subject in subject_list:
+        rc, data = calc_contdwn_responces(subject, regions=region_list, sides=hemisphere_sel, mode=mode,
+                                          scan_files_only=False, avg=avg_depth, display_span=display_span)
+        print(subject, rc)
+        logfile_fd.write(rc + '\n')
+        logfile_fd.flush()
+        if data is not None:
+            data['fig'].suptitle(subject + '\navg={}'.format(avg_depth))
+            fname = os.path.join(base_folder, 'plots', subject + '_' + mode + '_raw_avgs_' + str(avg_depth) + '.png')
+            data['fig'].savefig(fname)
+            fname = os.path.join(base_folder, 'plots', subject + '_' + mode)
+            np.savez(fname, p=data['p'], sem=data['sem'])
+            #
+            #
+            #
+            #
+            # visualize
+            nchans, nses = data['p'][0][0].shape[0], len(data['p'])
+            num_lags = 4  # how many time taps to visualize
+            vectors = np.zeros((2, nses, nchans, num_lags))
+            #
+            fig, ax = plt.subplots(2, num_lags, num='pierson', figsize=(15, 10))
+            fig.clf()
+            fig, ax = plt.subplots(2, num_lags, num='pierson', figsize=(15, 10))
+            for i_lag in range(num_lags):
+                ax[0, i_lag].grid(True)
+                ax[0, i_lag].set_ylim([0.5, display_span])
+                ax[0, i_lag].set_title('{:2.1f} - {:2.1f} sec.'.format(i_lag / 2, (i_lag + 1) / 2))
+            #
+            for i_ses, (p_ses, sem_ses) in enumerate(zip(data['p'], data['sem'])):
+                for i_rpt in range(2):
+                    # normalize the data
+                    nf = np.tile(p_ses[i_rpt][:, 0], (p_ses[i_rpt].shape[1], 1)).T
+                    # p_ses[i_rpt] /= nf
+                    # sem_ses[i_rpt] /= nf
+                    vectors[i_rpt, i_ses] = p_ses[i_rpt][:, 1:num_lags + 1] / nf[:, 1:num_lags + 1]
+                    for i_lag in range(num_lags):
+                        ax[0, i_lag].plot(vectors[i_rpt, i_ses, :, i_lag], label='s{}r{}'.format(i_ses + 1, i_rpt + 1))
+            # pierson correlation
 
+            n1, n2, nchans, nlags = vectors.shape
+            ur_vectors = vectors.reshape(n1 * n2, nchans, nlags)
+            pc = np.zeros((n1 * n2, n1 * n2))
+            for i_lag in range(nlags):
+                tap_vectors = ur_vectors[:, :, i_lag]
+                mu = tap_vectors.mean(axis=0)
+                ax[0, i_lag].plot(mu, ':', linewidth=2, label='avg')
+                ax[0, i_lag].legend()
+                # plain covariance
+                c = (tap_vectors - mu) @ (tap_vectors - mu).T
+                sigma = np.sqrt(np.diag(c))
+                for i in range(c.shape[0]):
+                    c[:, i] /= sigma[i]
+                    c[i, :] /= sigma[i]
+                # pairwise pierson
+                for i1 in range(n1 * n2):
+                    for i2 in range(n1 * n2):
+                        tap_vector_ij = tap_vectors[(i1, i2), :]
+                        # tap_vector_ij = tap_vector_ij * (tap_vector_ij < ovld_thd) # PATCH!!! FOR HIGH LEVEL NOISES
+                        muij = tap_vector_ij.mean(axis=1)
+                        dij = tap_vector_ij - muij.reshape(2, 1)
+                        pc[i1, i2] = (dij[0].reshape(1, nchans) @ dij[1].reshape(nchans, 1)).squeeze() / (
+                                    np.linalg.norm(dij[0]) * np.linalg.norm(dij[1]) + 1e-12)
+                        # pc[i1, i2] = np.corrcoef(tap_vector_ij)[0, 1]
+
+                sns.heatmap(np.round(pc, decimals=2), ax=ax[1, i_lag], vmin=-1, vmax=1, annot=True, cbar=False,
+                            square=True)
+
+            fig.suptitle('PAIRWISE pearson correlation    ' + subject + '\navg={}'.format(avg_depth))
+            fname = os.path.join(base_folder, 'plots', subject + '-' + mode + '_pearson' + str(avg_depth) + '.png')
+            fig.savefig(fname)
+            plt.show(block=False)
+            plt.pause(0.25)
+
+    logfile_fd.close()
 
 
 base_folder = 'E:/ds004789-download'
-subjects_list = get_subject_list(base_folder=base_folder)
 
-# aria of interest definition
-region_list = ['entorihinal', 'cuneus', 'fusiform', 'lateraloccipital', 'lingual', 'precuneus', 'superiorpariental']
-hemisphere_sel = ['LR', 'both', 'LR', 'LR', 'both', 'both', 'LR']
+# area of interest definition
+region_list = ['fusiform', 'inferiortemporal', 'lateraloccipital', 'lingual']
+hemisphere_sel = ['LR', 'LR', 'LR', 'both']
+
 # create table of available data
 if False:
+    subjects_list = get_subject_list(base_folder=base_folder)
     make_data_availability_list(base_folder=base_folder, region_list=region_list, hemisphere_sel=hemisphere_sel)
     assert False
 
 # parameters for the protocol
-regions = ['precuneus', 'cuneus', 'lateraloccipital', 'lingual']
-sides = ['L', 'both', 'L', 'both']
-subject_list = ['sub-R1425D', 'sub-R1355T', 'sub-R1346T', 'sub-R1338T', 'sub-R1334T', 'sub-R1161E', 'sub-R1156D', 'sub-R1154D', 'sub-R1153T',
-                'sub-R1123C', 'sub-R1094T', 'sub-R1145J', 'sub-R1108J', 'sub-R1092J', 'sub-R1077T', 'sub-R1065J', 'sub-R1299T']
-# subject_list = ['1355T', '1338T', '1337E', '1334T', '1323T', '1243T', '1331T', '1153T', '1134T', '1094T', '1108J', '1065J']
-# subject_list = ['sub-R' + s for s in subject_list]
-mode = 'bipolar'# 'monopolar'#
-avg_depth = 6
+# regions = ['fusiform', 'inferiortemporal', 'lateraloccipital', 'lingual']
+# sides = ['LR', 'LR', 'LR', 'both']
+subject_list = ['sub-R1243T', 'sub-R1281E', 'sub-R1334T', 'sub-R1338T', 'sub-R1346T', 'sub-R1355T', 'sub-R1425D',
+                'sub-R1299T', 'sub-R1065J', 'sub-R1060M', 'sub-R1092J', 'sub-R1292E', 'sub-R1308T', 'sub-R1315T', 'sub-R1350D',
+                'sub-R1094T', 'sub-R1123C', 'sub-R1153T', 'sub-R1154D', 'sub-R1156D', 'sub-R1161E', 'sub-R1168T', 'sub-R1223E']
+mode =  'bipolar'#'monopolar'#
 
-logfile_name = os.path.join(base_folder, 'logfile.txt')
-logfile_fd = open(logfile_name, 'wt')
-
-for subject in subject_list:
-    rc, data = calc_contdwn_responces(subject, regions=regions, sides=sides, mode=mode, scan_files_only=False, avg=avg_depth)
-    print(subject, rc)
-    logfile_fd.write(rc + '\n')
-    if data is not None:
-        data['fig'].suptitle(subject + '\navg={}'.format(avg_depth))
-        fname = os.path.join(base_folder, 'plots', subject + '_' + mode + '_raw_avgs_' + str(avg_depth) + '.png')
-        data['fig'].savefig(fname)
-        #
-        #
-        #
-        #
-        # visualize
-        nchans, nses = data['p'][0][0].shape[0], len(data['p'])
-        num_lags = 4 # how many time taps to visualize
-        vectors = np.zeros((2, nses, nchans, num_lags))
-        #
-        fig, ax = plt.subplots(2, num_lags, num='pierson', figsize=(15, 10))
-        fig.clf()
-        fig, ax = plt.subplots(2, num_lags, num='pierson', figsize=(15, 10))
-        for i_lag in range(num_lags):
-            ax[0, i_lag].grid(True)
-            ax[0, i_lag].set_ylim([0.5, 3])
-            ax[0, i_lag].set_title('{:2.1f} - {:2.1f} sec.'.format(i_lag / 2, (i_lag + 1) / 2))
-        #
-        for i_ses, (p_ses, sem_ses) in enumerate(zip(data['p'], data['sem'])):
-            for i_rpt in range(2):
-                # normalize the data
-                nf = np.tile(p_ses[i_rpt][:, 0], (p_ses[i_rpt].shape[1], 1)).T
-                # p_ses[i_rpt] /= nf
-                # sem_ses[i_rpt] /= nf
-                vectors[i_rpt, i_ses] = p_ses[i_rpt][:, 1:num_lags+1] / nf[:, 1:num_lags+1]
-                for i_lag in range(num_lags):
-                    ax[0, i_lag].plot(vectors[i_rpt, i_ses, :, i_lag], label='s{}r{}'.format(i_ses+1, i_rpt+1))
-        # pierson correlation
-
-        n1, n2, nchans, nlags = vectors.shape
-        ur_vectors = vectors.reshape(n1*n2, nchans, nlags)
-        pc = np.zeros((n1*n2, n1*n2))
-        for i_lag in range(nlags):
-            tap_vectors = ur_vectors[:, :, i_lag]
-            mu = tap_vectors.mean(axis=0)
-            ax[0, i_lag].plot(mu, ':', linewidth=2, label='avg')
-            ax[0, i_lag].legend()
-            # plain covariance
-            c = (tap_vectors - mu) @ (tap_vectors - mu).T
-            sigma = np.sqrt(np.diag(c))
-            for i in range(c.shape[0]):
-                c[:, i] /= sigma[i]
-                c[i, :] /= sigma[i]
-            # pairwise pierson
-            for i1 in range(n1*n2):
-                for i2 in range(n1*n2):
-                    tap_vector_ij = tap_vectors[(i1, i2), :]
-                    tap_vector_ij = tap_vector_ij * (tap_vector_ij < 4) # PATCH!!! FOR HIGH LEVEL NOISES
-                    muij = tap_vector_ij.mean(axis=1)
-                    dij = tap_vector_ij - muij.reshape(2, 1)
-                    pc[i1, i2] = (dij[0].reshape(1, nchans) @ dij[1].reshape(nchans, 1)).squeeze() / (np.linalg.norm(dij[0]) * np.linalg.norm(dij[1]) + 1e-12)
-                    # pc[i1, i2] = np.corrcoef(tap_vector_ij)[0, 1]
-
-            sns.heatmap(np.round(pc, decimals=2), ax=ax[1, i_lag], vmin=-1, vmax=1, annot=True, cbar=False, square=True)
-
-        fig.suptitle('PAIRWISE pearson correlation    ' + subject + '\navg={}'.format(avg_depth))
-        fname = os.path.join(base_folder, 'plots', subject + '-' + mode + '_pearson' + str(avg_depth) + '.png')
-        fig.savefig(fname)
-        plt.show(block=False)
-        plt.pause(0.25)
+if False:
+    run_analysis_protocol_1(subject_list, mode='bipolar')
 
 
+def pairwise_pearson(data, axis=-1):
+
+    if axis != -1:
+        data = np.copy(data.T)
+    n_codes = data.shape[0]
+    n_chans = data.shape[-1]
+    c = np.zeros((n_codes, n_codes))
+    for i1 in range(n_codes):
+        for i2 in range(i1, n_codes):
+            vij = data[(i1, i2), :]
+            vij = vij - vij.mean(axis=-1).reshape(2, 1)
+            test = np.linalg.norm(vij[1] - vij[0]) / min(np.linalg.norm(vij[0]), np.linalg.norm(vij[1])) < 3.5
+            c[i1, i2] = ((vij[0]).reshape(1, n_chans) @ vij[1].reshape(n_chans, 1)).squeeze() / (np.linalg.norm(vij[0]) * np.linalg.norm(vij[1]) + 1e-12)
+            NORMDIST = False
+            if NORMDIST:
+                a, b = vij[0] / np.linalg.norm(vij[0]), vij[1] / np.linalg.norm(vij[1])
+                c[i1, i2] = 1 - np.linalg.norm(a - b)
+            c[i1, i2] = c[i1, i2] * test - 9 * (1 - test)
+            # print(i1, i2, np.linalg.norm(vij[1] - vij[0]) , np.sqrt((np.linalg.norm(vij[0]) * np.linalg.norm(vij[1]) + 1e-12)),
+            #       np.linalg.norm(vij[0]), np.linalg.norm(vij[1]), c[i1, i2], np.linalg.norm(vij[1] - vij[0]) / min(np.linalg.norm(vij[0]), np.linalg.norm(vij[1])))
+
+    return c
 
 
-logfile_fd.close()
+def remove_one_contact(p, mask):
+
+    active_list = np.argwhere(mask).flatten()
+    base_mat = pairwise_pearson(p[:, mask, 1])
+    base_score = min(base_mat[0, 1], base_mat[2, 3], base_mat[4, 5])
+    best_score = base_score
+    for i in active_list:
+        mask_i = np.copy(mask)
+        mask_i[i] = False
+        mat = pairwise_pearson(p[:, mask_i, 1])
+        score = min(mat[0, 1], mat[2, 3], mat[4, 5])
+        if score > best_score:
+            best_mask = np.copy(mask_i)
+            best_score = score
+    if best_score > base_score:
+        return best_mask
+    else:
+        return mask
+
+
+if True:
+    paggr = np.zeros((3, 2, 0, 21))
+    for subject in subject_list:
+        fname = os.path.join(base_folder, 'plots', subject + '_' + mode + '.npz')
+        try:
+            data = np.load(fname)
+            p, sem = data['p'][:3], data['sem'][:3]
+            paggr = np.concatenate((paggr, p), axis=2)
+            print('read', fname, 'aggr. shape:', paggr.shape)
+        except:
+            print('can''t read', fname)
+
+    #paggr[:, :, :, 1] = paggr[:, :, :, (1, 2, 3, 4, 5, 6, 7, 9, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)].mean(axis=-1)
+
+    num_contacts = paggr.shape[2]
+    paggr = np.concatenate((paggr[0], paggr[1], paggr[2]), axis=0)
+    admit = np.zeros(num_contacts, dtype='bool')
+    for i_chan in range(num_contacts):
+        show = False
+        if show:
+            plt.clf()
+            plt.plot(paggr[:, i_chan].flatten())
+        sorted = np.sort(paggr[:, i_chan].flatten())
+        if show:
+            plt.plot(sorted, c='r')
+            plt.ylim([0.5, 10])
+            plt.grid(True)
+        q6, q114, q119 = sorted[5], sorted[113], sorted[-1]
+        admit[i_chan] = (q6 > 0.8) * (q114 > 1.6) * (q119 < (10 * q114)) * (q119 < 150)
+        if show and admit[i_chan]:
+            plt.title('{},  q6: {:4.1f}  q114:  {:4.1f}    max: {:4.1f}'.format(i_chan, q6, q114, q119))
+            plt.show(block=False)
+            plt.pause(0.5)
+    print(admit.sum(), 'out of', num_contacts)
+
+    split = (np.arange(num_contacts) % 2).astype(bool)
+    # p_odd_all = paggr[:, np.logical_not(split), 1]
+    # p_even_all = paggr[:, split, 1]
+    # p_odd_admt = paggr[:, np.logical_not(split) * admit, 1]
+    # p_even_admt = paggr[:, split * admit, 1]
+    fig, ax = plt.subplots(2, 4, figsize=(12, 9))
+    def show_one_case(p, col, desc):
+        ax[0, col].plot(p.T)
+        ax[0, col].grid(True)
+        ax[0, col].set_ylim((0.5, 5))
+        ax[0, col].legend({'s1r1', 's1r2', 's2r1', 's2r2', 's3r1', 's3r2'})
+        ax[0, col].set_title(desc)
+        sns.heatmap(np.round(pairwise_pearson(p), decimals=2), ax=ax[1, col], annot=True, vmin=0, vmax=1, cbar=False, square=True)
+        for x in (2, 4):
+            ax[1, col].plot([x, x], [0, 6], c='y', linewidth=2)
+            ax[1, col].plot([0, 6], [x, x], c='y', linewidth=2)
+
+    show_one_case(paggr[:, np.logical_not(split), 1], 0, 'odd, all')
+    show_one_case(paggr[:, split, 1], 1, 'even, all')
+    show_one_case(paggr[:, np.logical_not(split) * admit, 1], 2, 'odd, admt')
+    show_one_case(paggr[:, split * admit, 1], 3, 'even, admt')
+
+    plt.show()
+
+    # fig, ax = plt.subplots(2, 4, figsize=(12, 9))
+    # mask_odd = np.logical_not(split) * admit
+    # mask_even = split * admit
+    # for i in range(max(mask_odd.sum(), mask_even.sum()) - 4):
+    #         mask_odd = remove_one_contact(paggr, mask_odd)
+    #         mask_even = remove_one_contact(paggr, mask_even)
+    # show_one_case(paggr[:, np.logical_not(split) * admit, 1], 2, 'odd, admt')
+    # show_one_case(paggr[:, split * admit, 1], 3, 'even, admt')
+    # show_one_case(paggr[:, mask_odd, 1], 0, 'odd, filtered')
+    # show_one_case(paggr[:, mask_even, 1], 1, 'even, filterd')
+    # plt.show()
+
+    # now try to filter all admitted
+    for i_chan in range(num_contacts):
+        sorted = np.sort(paggr[:, i_chan].flatten())
+        q6, q114, q119 = sorted[5], sorted[113], sorted[-1]
+        admit[i_chan] = (q6 > 0.8) * (q114 > 1.5) * (q119 < (7 * q114)) * (q119 < 90)
+
+    fig, ax = plt.subplots(2, 4, figsize=(12, 9))
+    show_one_case(paggr[:, admit, 1], 0, 'admt')
+    mask = np.copy(admit)
+    for i in range(admit.sum() - 4):
+        mask = remove_one_contact(paggr, mask)
+    show_one_case(paggr[:, mask, 1], 1, 'admt, filtered')
+    show_one_case(paggr[:, mask * np.logical_not(split), 1], 2, 'odd, filtered')
+    show_one_case(paggr[:, mask * split, 1], 3, 'even, filterd')
+    plt.show()
+
 
