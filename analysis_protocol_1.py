@@ -13,7 +13,7 @@ from my_mne_wrapper import my_mne_wrapper
 from my_subband_processings import calc_HFB
 from my_tfr_wrapper_1 import calc_tfr
 
-def make_data_availability_list(base_folder, region_list, hemisphere_sel):
+def make_data_availability_list(base_folder, region_list, hemisphere_sel, read_dates=False):
 
     subject_list = get_subject_list(base_folder=base_folder)
     data = dict()
@@ -43,9 +43,13 @@ def make_data_availability_list(base_folder, region_list, hemisphere_sel):
             # add session info
             subject_data['numsessions'] = len(paths)
             subject_data['num countdowns'] = []
+            subject_data['meas dates'] = []
             for i_sess, path in enumerate(paths):
                 event_reader_obj = event_reader(path['events'])
                 subject_data['num countdowns'].append(len(event_reader_obj.get_countdowns()))
+                #
+                if read_dates:
+                    subject_data['meas dates'].append(mne.io.read_raw_edf(path['signals'], preload=False).info['meas_date'])
 
             if total_contacts > 0:
                 data[subject] = subject_data
@@ -83,7 +87,9 @@ def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], ti
     electrode_list = montage.get_electrode_list_by_region(region_list=regions, hemisphere_sel=sides)
     contact_list = []
     for group in electrode_list:
-     contact_list = contact_list + electrode_list[group]
+        for e in electrode_list[group]: # adding the group indication to the list
+            e['group'] = group
+        contact_list = contact_list + electrode_list[group]
     num_contacts = len(contact_list)
     if num_contacts < 4:
         rc = 'not enough contacts for {} {}'.format(subject, group)
@@ -175,7 +181,16 @@ def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], ti
         plt.show(block=False)
         plt.pause(0.25)
 
-        return rc, dict({'p': p_list, 'sem': sem_list, 'desc': desc_list, 'fig': fig})
+        if mode == 'bipolar':
+            # generate the bipolat contact list
+            used_contacts = []
+            for name in chan_names:
+                mask1 = np.array([c['name'] == name.split('-')[0] for c in contact_list])
+                mask2 = np.array([c['name'] == name.split('-')[1] for c in contact_list])
+                used_contacts.append([contact_list[np.argwhere(mask1).squeeze()], contact_list[np.argwhere(mask2).squeeze()]])
+        contact_list = used_contacts
+
+        return rc, dict({'p': p_list, 'sem': sem_list, 'desc': desc_list, 'fig': fig, 'contact list': contact_list})
 
 
 def run_analysis_protocol_1(subject_list, mode='bipolar', avg_depth=8, ovld_thd=4):
@@ -194,8 +209,14 @@ def run_analysis_protocol_1(subject_list, mode='bipolar', avg_depth=8, ovld_thd=
             data['fig'].suptitle(subject + '\navg={}'.format(avg_depth))
             fname = os.path.join(base_folder, 'plots', subject + '_' + mode + '_raw_avgs_' + str(avg_depth) + '.png')
             data['fig'].savefig(fname)
+            if mode == 'monopolar':
+                pass
+            else:
+                contacts = ['{}-{}  ({} , {})   {} {}'.format(d[0]['name'], d[1]['name'], d[0]['group'], d[1]['group'],
+                                                               str(np.round(d[0]['coords'].squeeze(), decimals=2)),
+                                                               str(np.round(d[1]['coords'].squeeze(), decimals=2))) for d in data['contact list']]
             fname = os.path.join(base_folder, 'plots', subject + '_' + mode)
-            np.savez(fname, p=data['p'], sem=data['sem'])
+            np.savez(fname, p=data['p'], sem=data['sem'], contacts=np.array(contacts))
             #
             #
             #
@@ -281,7 +302,7 @@ subject_list = ['sub-R1243T', 'sub-R1281E', 'sub-R1334T', 'sub-R1338T', 'sub-R13
                 'sub-R1094T', 'sub-R1123C', 'sub-R1153T', 'sub-R1154D', 'sub-R1156D', 'sub-R1161E', 'sub-R1168T', 'sub-R1223E']
 mode =  'bipolar'#'monopolar'#
 
-if False:
+if True:
     run_analysis_protocol_1(subject_list, mode='bipolar')
 
 
@@ -331,17 +352,19 @@ def remove_one_contact(p, mask):
 
 if True:
     paggr = np.zeros((3, 2, 0, 21))
+    contacts = np.zeros(0, dtype=str)
     for subject in subject_list:
         fname = os.path.join(base_folder, 'plots', subject + '_' + mode + '.npz')
         try:
             data = np.load(fname)
             p, sem = data['p'][:3], data['sem'][:3]
             paggr = np.concatenate((paggr, p), axis=2)
+            contacts = np.concatenate((contacts, data['contacts']))
             print('read', fname, 'aggr. shape:', paggr.shape)
         except:
             print('can''t read', fname)
 
-    #paggr[:, :, :, 1] = paggr[:, :, :, (1, 2, 3, 4, 5, 6, 7, 9, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)].mean(axis=-1)
+    #paggr[:, :, :, 1] = paggr[:, :, :, (1, 2, 3, 4)].mean(axis=-1)
 
     num_contacts = paggr.shape[2]
     paggr = np.concatenate((paggr[0], paggr[1], paggr[2]), axis=0)
@@ -401,10 +424,10 @@ if True:
     # plt.show()
 
     # now try to filter all admitted
-    for i_chan in range(num_contacts):
-        sorted = np.sort(paggr[:, i_chan].flatten())
-        q6, q114, q119 = sorted[5], sorted[113], sorted[-1]
-        admit[i_chan] = (q6 > 0.8) * (q114 > 1.5) * (q119 < (7 * q114)) * (q119 < 90)
+    # for i_chan in range(num_contacts):
+    #     sorted = np.sort(paggr[:, i_chan].flatten())
+    #     q6, q114, q119 = sorted[5], sorted[113], sorted[-1]
+    #     admit[i_chan] = (q6 > 0.8) * (q114 > 1.6) * (q119 < (7 * q114)) * (q119 < 90)
 
     fig, ax = plt.subplots(2, 4, figsize=(12, 9))
     show_one_case(paggr[:, admit, 1], 0, 'admt')
@@ -414,6 +437,40 @@ if True:
     show_one_case(paggr[:, mask, 1], 1, 'admt, filtered')
     show_one_case(paggr[:, mask * np.logical_not(split), 1], 2, 'odd, filtered')
     show_one_case(paggr[:, mask * split, 1], 3, 'even, filterd')
+    #
+    # print contacts related daya
+    print('\nselected electrodes:\n', contacts[mask].T)
+    clist = list([c.split(' ')[2][1:] for c in contacts])
+    regions = np.unique(clist)
+    clist_filtered = list([c.split(' ')[2][1:] for c in contacts[mask]])
+    df = pd.DataFrame(columns=regions)
+    df.loc[0] = [np.array([c == regions[i] for c in clist]).sum().astype(int) for i in range(len(regions))]
+    df.loc[1] = [np.array([c == regions[i] for c in clist_filtered]).sum().astype(int) for i in range(len(regions))]
+    df.loc[2] = np.round(100 * df.iloc[0] / len(clist), decimals=1)
+    df.loc[3] = np.round(100 * df.iloc[1] / len(clist_filtered), decimals=1)
+    pd.set_option('display.max_columns', None)
+    pd.options.display.width = 120
+    print(df)
+    fig= plt.figure(figsize=(4, 4))
+    ax = fig.add_subplot(projection='3d')
+    ccoords = [c[c.find('[') + 1:] for c in contacts]
+    ccoords1 = [c[:c.find(']')] for c in ccoords]
+    x1 = np.array([float(c.split()[0]) for c in ccoords1])
+    y1 = np.array([float(c.split()[1]) for c in ccoords1])
+    z1 = np.array([float(c.split()[2]) for c in ccoords1])
+    ccoords2 = [c[c.find('[') + 1:] for c in ccoords]
+    ccoords2 = [c[:c.find(']')] for c in ccoords2]
+    x2 = np.array([float(c.split()[0]) for c in ccoords2])
+    y2 = np.array([float(c.split()[1]) for c in ccoords2])
+    z2 = np.array([float(c.split()[2]) for c in ccoords2])
+    ax.scatter(x1, y1, z1,  c='k', s=8)
+    ax.scatter(x2, y2, z2, c='k', s=10)
+    for i in np.argwhere(admit).flatten():
+        ax.plot((x1[i], x2[i]), (y1[i], y2[i]), (z1[i], z2[i]), c='k')
+    for i in np.argwhere(mask).flatten():
+        #print('({:4.1f} , {:4.1f} , {:4.1f})   ;   ({:4.1f} , {:4.1f} , {:4.1f})'.format(x1[i], y1[i], z1[i], x2[i], y2[i], z2[i]))
+        ax.plot((x1[i], x2[i]), (y1[i], y2[i]), (z1[i], z2[i]), c='r')
+    #
     plt.show()
 
 
