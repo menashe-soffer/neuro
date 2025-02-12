@@ -145,6 +145,29 @@ def calc_event_responces(paths, get_event_func, electrode_list, scan_files_only=
     return 0, p_list, sem_list, desc_list, chan_names
 
 
+def get_paths_and_electrode_list(base_folder, subject, regions, sides):
+
+    paths = get_paths(base_folder=base_folder, subject=subject, sess_slct=None, mode=mode)
+    if len(paths) == 0:
+        rc = subject + ':   no paths'
+        return rc, None, None, None
+
+    montage = my_montage_reader(fname=paths[0]['electrodes'])
+    electrode_list = montage.get_electrode_list_by_region(region_list=regions, hemisphere_sel=sides)
+    contact_list = []
+    for group in electrode_list:
+        for e in electrode_list[group]:  # adding the group indication to the list
+            e['group'] = group
+        contact_list = contact_list + electrode_list[group]
+    num_contacts = len(contact_list)
+    if num_contacts < 2:  # 4:
+        rc = 'not enough contacts for {} {}'.format(subject, group)
+        # print(rc)
+        return rc, None, None, None
+
+    return 0, paths, contact_list, electrode_list
+
+
 def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], timebin_sec=0.5, tscope=[-1, 10],
                            avg=6, in_session_gap=13, mode='monopolar', scan_files_only=True, display_span=3):
 
@@ -153,26 +176,12 @@ def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], ti
     subs_centers = np.linspace(start=band[0], stop=band[-1], num=int((band[-1] - band[0]) / 10 + 1.5))
     subs_centers = (subs_centers[:-1] + subs_centers[1:]) / 2
     subs_bw = np.diff(subs_centers)[0]
-    # result holders
-    p_list, sem_list, desc_list = [], [], []
 
-    paths = get_paths(base_folder=base_folder, subject=subject, sess_slct=None, mode=mode)
-    if len(paths) == 0:
-        rc = subject + ':   no paths'
-        return rc, None
 
-    montage = my_montage_reader(fname=paths[0]['electrodes'])
-    electrode_list = montage.get_electrode_list_by_region(region_list=regions, hemisphere_sel=sides)
-    contact_list = []
-    for group in electrode_list:
-        for e in electrode_list[group]: # adding the group indication to the list
-            e['group'] = group
-        contact_list = contact_list + electrode_list[group]
+    rc, paths, contact_list, electrode_list = get_paths_and_electrode_list(base_folder=base_folder, subject=subject, regions=regions, sides=sides)
+    if rc:
+        return subject + ':  ' + rc, None
     num_contacts = len(contact_list)
-    if num_contacts < 2:#4:
-        rc = 'not enough contacts for {} {}'.format(subject, group)
-        #print(rc)
-        return rc, None
 
     rc, p_list, sem_list, desc_list, chan_names = calc_event_responces(paths=paths, get_event_func=event_reader.get_countdowns,
                                                                        electrode_list=electrode_list, scan_files_only=scan_files_only,
@@ -180,70 +189,6 @@ def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], ti
 
     if rc:
         return subject + ':  ' + rc, None
-    # cntdwn_list = []
-    # for path in paths:
-    #     event_reader_obj =  event_reader(path['events'])
-    #     cntdwns = event_reader_obj.get_countdowns()
-    #     if len(cntdwns) == 26:#avg + in_session_gap:
-    #         cntdwn_list.append(cntdwns)
-    # if len(cntdwn_list) < 2:
-    #     rc = 'not enough valid sessions for {} {}'.format(subject, group)
-    #     #print(rc)
-    #     return rc, None
-    #
-    # print(subject, num_contacts, 'contacts', len(cntdwn_list), 'sessions')
-    #
-    # for path in paths:
-    #     event_reader_obj = event_reader(path['events'])
-    #     signals = my_mne_wrapper()
-    #     signals.read_edf_file(fname=path['signals'], chanel_groups=electrode_list)
-    #     if hasattr(signals, 'exceptions'):
-    #         rc = signals.exceptions + ' for {} {}'.format(subject, group)
-    #         return rc, None
-    #     event_reader_obj.align_to_sampling_rate(old_sfreq=signals.original_sfreq, new_sfreq=signals.get_mne().info['sfreq'])
-    #     signals.preprocess(powerline=60)#, passband=[60, 160])
-    #     #
-    #     chan_names = signals.get_mne().info['ch_names']
-    #     if len(chan_names) < 4:
-    #         rc = 'not enough channels for {} {}'.format(subject, group)
-    #         #print(rc)
-    #         return rc, None
-    #
-    #     cntdwn_events = event_reader_obj.get_countdowns()
-    #     # PATCH
-    #     admit_list = np.argwhere([e['onset sample'] > 500 for e in cntdwn_events]).squeeze()
-    #     cntdwn_events = [cntdwn_events[i] for i in admit_list]
-    #     #
-    #     events = np.zeros((len(cntdwn_events), 3), dtype=int)
-    #     events[:, 0] = np.array([e['onset sample'] for e in cntdwn_events])
-    #     signals.set_events(events=events, event_glossary={0: 'cntdwn'})
-    #
-    #     if events[:, 0].max() > signals.get_mne().get_data().shape[-1]:
-    #         rc = subject + ':      events[:, 0].max() > signals.get_mne().get_data().shape[-1]'
-    #         #print(rc)
-    #         return rc, None
-    #
-    #     # process
-    #     if not scan_files_only:
-    #         p_list.append([])
-    #         sem_list.append([])
-    #         desc_list.append([])
-    #         eidx = np.array((0, avg))
-    #         precalc = None
-    #         for i in range(2):
-    #             #print(path, signals.get_mne().get_data().shape)
-    #             print('>>>>>>       ', path['signals'])
-    #             _, p, sem, precalc = calc_HFB(signals.get_mne().get_data(), dbg_markers=events[eidx[0]:eidx[1], 0], chan_names=chan_names,
-    #                                           sub_centers=subs_centers, subs_bw=subs_bw, tscope=[-5, 18], plot_prefix=None, gen_plots=False, precalc=precalc)
-    #             boundaries = np.arange(start=0, stop=p.shape[1]+1, step=int(signals.get_mne().info['sfreq'] * timebin_sec))
-    #             p_list[-1].append(np.array([p[:, b1:b2].mean(axis=1) for (b1, b2) in zip(boundaries[:-1], boundaries[1:])]).T)
-    #             sem_list[-1].append(np.array([sem[:, b1:b2].mean(axis=1) for (b1, b2) in zip(boundaries[:-1], boundaries[1:])]).T)
-    #             desc_list[-1].append(path['signals'][path['signals'].find('ses'):][:5] + '  events {} - {}'.format(eidx[0], eidx[1]))
-    #             eidx += in_session_gap
-    #
-    #     MAX_SESSIONS_TO_PROCESS = 3
-    #     if len(desc_list) >= MAX_SESSIONS_TO_PROCESS:
-    #         break
 
 
     #rc = '{}   {} contacts   {} channels   {} sessions'.format(subject, num_contacts, len(chan_names), len(cntdwn_list))
