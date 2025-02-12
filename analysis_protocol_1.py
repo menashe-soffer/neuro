@@ -68,7 +68,85 @@ def make_data_availability_list(base_folder, region_list, hemisphere_sel, read_d
     writer.close()
 
 
-def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], timebin_sec=0.5, avg=6, in_session_gap=13, mode='monopolar', scan_files_only=True, display_span=3):
+
+def calc_event_responces(paths, get_event_func, electrode_list, scan_files_only=False,
+                         subs_centers=[45, 55, 65, 75, 85, 95], subs_bw=10, tscope=[-1, 10], timebin_sec=1,
+                         min_events_in_sess=26, max_events_in_sess=26, min_sess=3,
+                         max_sess=3, min_contacts=4, avg_depth=6, num_avg_groups=2, between_avg=13):
+
+    p_list, sem_list, desc_list = [], [], []
+
+    # check that there are enough valid sessions
+    valid_sessions = 0
+    for i_path, path in enumerate(paths):
+        event_reader_obj = event_reader(path['events'])
+        events = get_event_func(event_reader_obj)
+        if (len(events) >= min_events_in_sess) and (len(events) <= max_events_in_sess):
+            valid_sessions += 1
+    if valid_sessions < min_sess:
+        rc = 'not enough sessions'
+        return rc, None
+    #event_list, path_id_list = events[:max_sess], path_id_list[:max_sess]
+
+    #print(subject, num_contacts, 'contacts', len(cntdwn_list), 'sessions')
+
+    for path in paths:
+        event_reader_obj = event_reader(path['events'])
+        signals = my_mne_wrapper()
+        signals.read_edf_file(fname=path['signals'], chanel_groups=electrode_list)
+        if hasattr(signals, 'exceptions'):
+            rc = signals.exceptions + ' for {} {}'.format(subject, group)
+            return rc, None
+        event_reader_obj.align_to_sampling_rate(old_sfreq=signals.original_sfreq, new_sfreq=signals.get_mne().info['sfreq'])
+        signals.preprocess(powerline=60)#, passband=[60, 160])
+        #
+        chan_names = signals.get_mne().info['ch_names']
+        if len(chan_names) <= min_contacts:
+            #rc = 'not enough channels for {} {}'.format(subject, group)
+            rc = 'not enough channels'
+            #print(rc)
+            return rc, None, None, None, None
+
+        sess_events = get_event_func(event_reader_obj)
+        # PATCH
+        admit_list = np.argwhere([e['onset sample'] > 500 for e in sess_events]).squeeze()
+        sess_events = [sess_events[i] for i in admit_list]
+        #
+        events = np.zeros((len(sess_events), 3), dtype=int)
+        events[:, 0] = np.array([e['onset sample'] for e in sess_events])
+        signals.set_events(events=events, event_glossary={0: 'cntdwn'})
+
+        if events[:, 0].max() > signals.get_mne().get_data().shape[-1]:
+            # rc = subject + ':      events[:, 0].max() > signals.get_mne().get_data().shape[-1]'
+            rc = ':      events[:, 0].max() > signals.get_mne().get_data().shape[-1]'
+            return rc, None, None, None, None
+
+        # process
+        if not scan_files_only:
+            p_list.append([])
+            sem_list.append([])
+            desc_list.append([])
+            eidx = np.array((0, avg_depth))
+            precalc = None
+            for i in range(num_avg_groups):
+                #print(path, signals.get_mne().get_data().shape)
+                print('>>>>>>       ', path['signals'])
+                _, p, sem, precalc = calc_HFB(signals.get_mne().get_data(), dbg_markers=events[eidx[0]:eidx[1], 0], chan_names=chan_names,
+                                              sub_centers=subs_centers, subs_bw=subs_bw, tscope=tscope, plot_prefix=None, gen_plots=False, precalc=precalc)
+                boundaries = np.arange(start=0, stop=p.shape[1]+1, step=int(signals.get_mne().info['sfreq'] * timebin_sec))
+                p_list[-1].append(np.array([p[:, b1:b2].mean(axis=1) for (b1, b2) in zip(boundaries[:-1], boundaries[1:])]).T)
+                sem_list[-1].append(np.array([sem[:, b1:b2].mean(axis=1) for (b1, b2) in zip(boundaries[:-1], boundaries[1:])]).T)
+                desc_list[-1].append(path['signals'][path['signals'].find('ses'):][:5] + '  events {} - {}'.format(eidx[0], eidx[1]))
+                eidx += between_avg
+
+        if len(desc_list) >= max_sess:
+            break
+
+    return 0, p_list, sem_list, desc_list, chan_names
+
+
+def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], timebin_sec=0.5, tscope=[-1, 10],
+                           avg=6, in_session_gap=13, mode='monopolar', scan_files_only=True, display_span=3):
 
     # configurations for the sub=band processor
     # generate the sub-band spec for the processing
@@ -91,77 +169,85 @@ def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], ti
             e['group'] = group
         contact_list = contact_list + electrode_list[group]
     num_contacts = len(contact_list)
-    if num_contacts < 4:
+    if num_contacts < 2:#4:
         rc = 'not enough contacts for {} {}'.format(subject, group)
         #print(rc)
         return rc, None
 
-    cntdwn_list = []
-    for path in paths:
-        event_reader_obj =  event_reader(path['events'])
-        cntdwns = event_reader_obj.get_countdowns()
-        # PATCH
-        admit_list = np.argwhere([e['onset sample'] > 500 for e in cntdwns]).squeeze()
-        cntdwns = [cntdwns[i] for i in admit_list]
-        #
-        if len(cntdwns) == 26:#avg + in_session_gap:
-            cntdwn_list.append(cntdwns)
-    if len(cntdwn_list) < 2:
-        rc = 'not enough valid sessions for {} {}'.format(subject, group)
-        #print(rc)
-        return rc, None
+    rc, p_list, sem_list, desc_list, chan_names = calc_event_responces(paths=paths, get_event_func=event_reader.get_countdowns,
+                                                                       electrode_list=electrode_list, scan_files_only=scan_files_only,
+                                                                       subs_centers=subs_centers, subs_bw=subs_bw, tscope=tscope, timebin_sec=timebin_sec)
 
-    print(subject, num_contacts, 'contacts', len(cntdwn_list), 'sessions')
+    if rc:
+        return subject + ':  ' + rc, None
+    # cntdwn_list = []
+    # for path in paths:
+    #     event_reader_obj =  event_reader(path['events'])
+    #     cntdwns = event_reader_obj.get_countdowns()
+    #     if len(cntdwns) == 26:#avg + in_session_gap:
+    #         cntdwn_list.append(cntdwns)
+    # if len(cntdwn_list) < 2:
+    #     rc = 'not enough valid sessions for {} {}'.format(subject, group)
+    #     #print(rc)
+    #     return rc, None
+    #
+    # print(subject, num_contacts, 'contacts', len(cntdwn_list), 'sessions')
+    #
+    # for path in paths:
+    #     event_reader_obj = event_reader(path['events'])
+    #     signals = my_mne_wrapper()
+    #     signals.read_edf_file(fname=path['signals'], chanel_groups=electrode_list)
+    #     if hasattr(signals, 'exceptions'):
+    #         rc = signals.exceptions + ' for {} {}'.format(subject, group)
+    #         return rc, None
+    #     event_reader_obj.align_to_sampling_rate(old_sfreq=signals.original_sfreq, new_sfreq=signals.get_mne().info['sfreq'])
+    #     signals.preprocess(powerline=60)#, passband=[60, 160])
+    #     #
+    #     chan_names = signals.get_mne().info['ch_names']
+    #     if len(chan_names) < 4:
+    #         rc = 'not enough channels for {} {}'.format(subject, group)
+    #         #print(rc)
+    #         return rc, None
+    #
+    #     cntdwn_events = event_reader_obj.get_countdowns()
+    #     # PATCH
+    #     admit_list = np.argwhere([e['onset sample'] > 500 for e in cntdwn_events]).squeeze()
+    #     cntdwn_events = [cntdwn_events[i] for i in admit_list]
+    #     #
+    #     events = np.zeros((len(cntdwn_events), 3), dtype=int)
+    #     events[:, 0] = np.array([e['onset sample'] for e in cntdwn_events])
+    #     signals.set_events(events=events, event_glossary={0: 'cntdwn'})
+    #
+    #     if events[:, 0].max() > signals.get_mne().get_data().shape[-1]:
+    #         rc = subject + ':      events[:, 0].max() > signals.get_mne().get_data().shape[-1]'
+    #         #print(rc)
+    #         return rc, None
+    #
+    #     # process
+    #     if not scan_files_only:
+    #         p_list.append([])
+    #         sem_list.append([])
+    #         desc_list.append([])
+    #         eidx = np.array((0, avg))
+    #         precalc = None
+    #         for i in range(2):
+    #             #print(path, signals.get_mne().get_data().shape)
+    #             print('>>>>>>       ', path['signals'])
+    #             _, p, sem, precalc = calc_HFB(signals.get_mne().get_data(), dbg_markers=events[eidx[0]:eidx[1], 0], chan_names=chan_names,
+    #                                           sub_centers=subs_centers, subs_bw=subs_bw, tscope=[-5, 18], plot_prefix=None, gen_plots=False, precalc=precalc)
+    #             boundaries = np.arange(start=0, stop=p.shape[1]+1, step=int(signals.get_mne().info['sfreq'] * timebin_sec))
+    #             p_list[-1].append(np.array([p[:, b1:b2].mean(axis=1) for (b1, b2) in zip(boundaries[:-1], boundaries[1:])]).T)
+    #             sem_list[-1].append(np.array([sem[:, b1:b2].mean(axis=1) for (b1, b2) in zip(boundaries[:-1], boundaries[1:])]).T)
+    #             desc_list[-1].append(path['signals'][path['signals'].find('ses'):][:5] + '  events {} - {}'.format(eidx[0], eidx[1]))
+    #             eidx += in_session_gap
+    #
+    #     MAX_SESSIONS_TO_PROCESS = 3
+    #     if len(desc_list) >= MAX_SESSIONS_TO_PROCESS:
+    #         break
 
-    for path in paths:
-        event_reader_obj = event_reader(path['events'])
-        signals = my_mne_wrapper()
-        signals.read_edf_file(fname=path['signals'], chanel_groups=electrode_list)
-        event_reader_obj.align_to_sampling_rate(old_sfreq=signals.original_sfreq, new_sfreq=signals.get_mne().info['sfreq'])
-        signals.preprocess(powerline=60)#, passband=[60, 160])
-        #
-        chan_names = signals.get_mne().info['ch_names']
-        if len(chan_names) < 4:
-            rc = 'not enough channels for {} {}'.format(subject, group)
-            #print(rc)
-            return rc, None
 
-        cntdwn_events = event_reader_obj.get_countdowns()
-        # PATCH
-        admit_list = np.argwhere([e['onset sample'] > 500 for e in cntdwn_events]).squeeze()
-        cntdwn_events = [cntdwn_events[i] for i in admit_list]
-        #
-        events = np.zeros((len(cntdwn_events), 3), dtype=int)
-        events[:, 0] = np.array([e['onset sample'] for e in cntdwn_events])
-        signals.set_events(events=events, event_glossary={0: 'cntdwn'})
-
-        if events[:, 0].max() > signals.get_mne().get_data().shape[-1]:
-            rc = subject + ':      events[:, 0].max() > signals.get_mne().get_data().shape[-1]'
-            #print(rc)
-            return rc, None
-
-        # process
-        if not scan_files_only:
-            p_list.append([])
-            sem_list.append([])
-            desc_list.append([])
-            eidx = np.array((0, avg))
-            for i in range(2):
-                #print(path, signals.get_mne().get_data().shape)
-                _, p, sem = calc_HFB(signals.get_mne().get_data(), dbg_markers=events[eidx[0]:eidx[1], 0], chan_names=chan_names,
-                                     sub_centers=subs_centers, subs_bw=subs_bw, tscope=[-0.5, 10], plot_prefix=None, gen_plots=False)
-                boundaries = np.arange(start=0, stop=p.shape[1]+1, step=int(signals.get_mne().info['sfreq'] * timebin_sec))
-                p_list[-1].append(np.array([p[:, b1:b2].mean(axis=1) for (b1, b2) in zip(boundaries[:-1], boundaries[1:])]).T)
-                sem_list[-1].append(np.array([sem[:, b1:b2].mean(axis=1) for (b1, b2) in zip(boundaries[:-1], boundaries[1:])]).T)
-                desc_list[-1].append(path['signals'][path['signals'].find('ses'):][:5] + '  events {} - {}'.format(eidx[0], eidx[1]))
-                eidx += in_session_gap
-
-        MAX_SESSIONS_TO_PROCESS = 3
-        if len(desc_list) >= MAX_SESSIONS_TO_PROCESS:
-            continue
-
-
-    rc = '{}   {} contacts   {} channels   {} sessions'.format(subject, num_contacts, len(chan_names), len(cntdwn_list))
+    #rc = '{}   {} contacts   {} channels   {} sessions'.format(subject, num_contacts, len(chan_names), len(cntdwn_list))
+    rc = '{}   {} contacts'.format(subject, num_contacts)
 
     if scan_files_only:
         return rc, None
@@ -174,7 +260,7 @@ def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], ti
             for i_pos in range(2):
                 if i_ses < len(desc_list):
                     sns.heatmap(p_list[i_ses][i_pos], ax=ax[i_pos, i_ses], vmin=0.0, vmax=display_span, cbar=False, square=False,
-                                yticklabels=np.arange(len(chan_names)), xticklabels=(np.arange(start=-1, stop=20) + 0.5) / 2)
+                                yticklabels=np.arange(p_list[i_ses][i_pos].shape[0]), xticklabels=(np.arange(start=-1, stop=20) + 0.5) / 2)
                     ax[i_pos, i_ses].set_xlabel(desc_list[i_ses][i_pos])
                 else:
                     ax[i_pos, i_ses].axis('off')
@@ -193,7 +279,7 @@ def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], ti
         return rc, dict({'p': p_list, 'sem': sem_list, 'desc': desc_list, 'fig': fig, 'contact list': contact_list})
 
 
-def run_analysis_protocol_1(subject_list, mode='bipolar', avg_depth=8, ovld_thd=4):
+def run_analysis_protocol_1(subject_list, mode='bipolar', region_list=[], avg_depth=13, ovld_thd=4):
     display_span = ovld_thd * 0.75
 
     logfile_name = os.path.join(base_folder, 'logfile.txt')
@@ -201,7 +287,7 @@ def run_analysis_protocol_1(subject_list, mode='bipolar', avg_depth=8, ovld_thd=
 
     for subject in subject_list:
         rc, data = calc_contdwn_responces(subject, regions=region_list, sides=hemisphere_sel, mode=mode,
-                                          scan_files_only=False, avg=avg_depth, display_span=display_span)
+                                          scan_files_only=False, avg=avg_depth, display_span=display_span, tscope=[-5, 10], timebin_sec=0.1)
         print(subject, rc)
         logfile_fd.write(rc + '\n')
         logfile_fd.flush()
@@ -301,9 +387,13 @@ subject_list = ['sub-R1243T', 'sub-R1281E', 'sub-R1334T', 'sub-R1338T', 'sub-R13
                 'sub-R1299T', 'sub-R1065J', 'sub-R1060M', 'sub-R1092J', 'sub-R1292E', 'sub-R1308T', 'sub-R1315T', 'sub-R1350D',
                 'sub-R1094T', 'sub-R1123C', 'sub-R1153T', 'sub-R1154D', 'sub-R1156D', 'sub-R1161E', 'sub-R1168T', 'sub-R1223E']
 mode =  'bipolar'#'monopolar'#
+subject_list = ['sub-R1060M', 'sub-R1065J', 'sub-R1092J', 'sub-R1094T', 'sub-R1123C', 'sub-R1145J', 'sub-R1153T',
+                'sub-R1154D', 'sub-R1161E', 'sub-R1168T', 'sub-R1195E', 'sub-R1223E', 'sub-R1243T', 'sub-R1281E', 'sub-R1292E',
+                'sub-R1299T', 'sub-R1308T', 'sub-R1315T', 'sub-R1334T', 'sub-R1338T', 'sub-R1341T', 'sub-R1350D', 'sub-R1355T', 'sub-R1425D']
 
-if True:
-    run_analysis_protocol_1(subject_list, mode='bipolar')
+region_list, hemisphere_sel = region_list[3:4], hemisphere_sel[3:4]
+if False:
+    run_analysis_protocol_1(subject_list, mode='bipolar', region_list=region_list)
 
 
 def pairwise_pearson(data, axis=-1):
@@ -352,6 +442,7 @@ def remove_one_contact(p, mask):
 
 if True:
     paggr = np.zeros((3, 2, 0, 21))
+    paggr = np.zeros((3, 2, 0, 150))
     contacts = np.zeros(0, dtype=str)
     for subject in subject_list:
         fname = os.path.join(base_folder, 'plots', subject + '_' + mode + '.npz')
@@ -359,12 +450,60 @@ if True:
             data = np.load(fname)
             p, sem = data['p'][:3], data['sem'][:3]
             paggr = np.concatenate((paggr, p), axis=2)
-            contacts = np.concatenate((contacts, data['contacts']))
+            # contacts = np.concatenate((contacts, data['contacts']))
+            contacts = np.concatenate((contacts, np.array([c.split()[0] for c in data['contacts']])))
             print('read', fname, 'aggr. shape:', paggr.shape)
         except:
             print('can''t read', fname)
 
     #paggr[:, :, :, 1] = paggr[:, :, :, (1, 2, 3, 4)].mean(axis=-1)
+    #
+    # calc the contact varainces
+    nrpts = np.prod(paggr.shape[:2])
+    paggr = paggr.reshape(nrpts, paggr.shape[2], paggr.shape[3])
+    #
+    REMOVE_OUTLAIRS = True
+    if REMOVE_OUTLAIRS:
+        paggr = paggr * (paggr < 19)
+    # post-stimulus time histogram (PSTH)
+    PSTH_mean = paggr.mean(axis=(0, 1))
+    PSTH_std = paggr.std(axis=(0, 1))
+    PSTH_sem = PSTH_std / np.sqrt(PSTH_std.shape[0])
+    tscale = np.linspace(start=-1, stop=10, num=150)
+    plt.bar(tscale, PSTH_mean, width=0.08, facecolor='w', edgecolor='b', log=False)
+    plt.bar(tscale, 2 * PSTH_sem, bottom = PSTH_mean - PSTH_sem, width=0.04, color='k', log=False)
+    plt.grid()
+    plt.show()
+    #
+    for sec_choice in [0, 5, 9, 10, 12, 16, -1, -5]:
+        fig, ax = plt.subplots(1, 1, figsize=(12, 6))
+        bin1 = int(2 * (5.5 + sec_choice))
+        p1 = paggr[:, :, bin1:bin1+2].mean(axis=-1)
+        pmean = p1.mean(axis=0)
+        pstd = p1.std(axis=0)
+        psem = pstd / np.sqrt(nrpts)
+        idx = np.argsort(pmean)
+        ax.bar(np.arange(paggr.shape[1]), pmean[idx], width=0.75, facecolor='w', edgecolor='b', log=True)
+        # ax.plot(pmean[idx], 'b')
+        # ax.fill_between(np.arange(paggr.shape[1]), pmean[idx] - pstd[idx], pmean[idx] + pstd[idx], color='b', alpha=.15)
+        # ax.bar(np.arange(paggr.shape[1]), pmean[idx] + pstd[idx], width=0.4)
+        # ax.bar(np.arange(paggr.shape[1]), pmean[idx] + psem[idx], width=0.4)
+        ax.bar(np.arange(paggr.shape[1]), 2 * psem[idx], bottom = pmean[idx] - psem[idx], width=0.3, color='k', log=True)
+        ax.grid(True)
+        if sec_choice < 0:
+            ax.set_title('{} .. {} before countdown'.format(sec_choice, sec_choice + 1))
+        if sec_choice == 0:
+            ax.set_title('first countdown second')
+        if (sec_choice > 0) and (sec_choice < 10):
+            ax.set_title('countdown onset + {} to countdown + {}'.format(sec_choice, sec_choice + 1))
+        if sec_choice >= 10:
+            ax.set_title('{} to {} after countdown end'.format(sec_choice - 10, sec_choice - 9))
+        #ax.set_ylim([-0.5, 5])
+        ax.set_ylim([0.5, 15])
+        plt.show()
+        fig.savefig(os.path.join(base_folder, 'plots', 'variances-sec-{}'.format(sec_choice)))
+    assert False
+    #
 
     num_contacts = paggr.shape[2]
     paggr = np.concatenate((paggr[0], paggr[1], paggr[2]), axis=0)

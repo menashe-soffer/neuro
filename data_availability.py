@@ -212,3 +212,37 @@ print(admit_list.keys())
 # bins = (bins[:-1] + bins[1:]) / 2
 # ax[1].bar(bins, h, width=0.1)
 # plt.show()
+
+
+# # word repeat statistics
+# word_per_subject_list = dict()
+# for subject in list(admit_list.keys()):
+#     subject_data = admit_list[subject]
+#     admit_sessions = list(subject_data['sessions'].keys())
+#     paths = get_paths(base_folder=base_folder, subject=subject, mode='bipolar',
+#                       sess_slct=[int(a[-1]) for a in admit_sessions])
+#     words_list = []
+#     for path in paths:
+#         print(path['events'])
+#         event_reader_obj = event_reader(path['events'])
+#         event_types = event_reader_obj.df.trial_type.values
+#         event_names = event_reader_obj.df.item_name
+#         words = event_names[event_types == 'WORD'].values
+#         words_list.append(words)
+#     subject_words = set(words_list[0]).intersection(set(words_list[1])).intersection(set(words_list[2]))
+#     word_per_subject_list[subject] = copy.deepcopy(subject_words)
+#
+# n_subjects = len(admit_list)
+# admit_subjects = list(admit_list)
+# hit_mat = np.zeros((n_subjects, n_subjects))
+# for i_sub1 in range(n_subjects - 1):
+#     list1 = word_per_subject_list[admit_subjects[i_sub1]]
+#     if i_sub1 == 0:
+#         common_list = copy.deepcopy(list1)
+#     else:
+#         if i_sub1 != 3:
+#             common_list = common_list.intersection(list1)
+#     for i_sub2 in range(i_sub1, n_subjects):
+#         list2 = word_per_subject_list[admit_subjects[i_sub2]]
+#         hit_mat[i_sub1, i_sub2] = len(list1.intersection(list2))
+# print('here')

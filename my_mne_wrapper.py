@@ -46,7 +46,11 @@ class my_mne_wrapper:
                 self.bipolar_chanel_groups = self._bipolar_montage_from_monopolar(chanel_groups=chanel_groups, edf_fname=fname)
                 include_list = [e for r in chanel_groups for e in self.bipolar_chanel_groups[r]]
 
-            self.mne = mne.io.read_raw_edf(fname, preload=True, include=include_list)
+            if len(include_list) > 0:
+                self.mne = mne.io.read_raw_edf(fname, preload=True, include=include_list)
+            else:
+                self.exceptions = 'no contacts'
+                return
 
         self.original_sfreq = self.mne.info['sfreq']
         if self.original_sfreq != 500:

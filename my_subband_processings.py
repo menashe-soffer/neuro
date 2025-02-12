@@ -119,15 +119,19 @@ def plot_signals_by_chan_and_band(signal1, signal2=None, avgsignal=None, plot_on
     return fig
 
 
-def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, tscope=[-0.6, 1.6], dbg_markers=None, chan_names=None, plot_prefix=None, gen_plots=True):
+def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, tscope=[-0.6, 1.6], dbg_markers=None, chan_names=None,
+             plot_prefix=None, gen_plots=True, precalc=None):
 
-    x, p = split_to_subbands1(data, sub_centers=sub_centers, subs_bw=subs_bw, fs=fs, show_dbg=False, dbg_markers=dbg_markers)
+    if precalc is None:
+        x, p = split_to_subbands1(data, sub_centers=sub_centers, subs_bw=subs_bw, fs=fs, show_dbg=False, dbg_markers=dbg_markers)
+    else:
+        x, p = precalc[0], precalc[1]
 
     num_markers = len(dbg_markers)
     ave_tscope = tscope#[-0.6, 1.6]#[-2, 10.5]
     ave_scope_smps = np.arange(start=ave_tscope[0] * fs, stop=ave_tscope[1] * fs).astype(int)
     ave_scope_time = ave_scope_smps / fs
-    norm_meas_mask = (ave_scope_time > -0.4) * (ave_scope_time < 0.1)
+    norm_meas_mask = (ave_scope_time > -0.5) * (ave_scope_time < 0)
     num_markers_to_process = 300#26
     # band_factors = np.array(sub_centers) / sub_centers[0]
     # for i_band in range(len(band_factors)):
@@ -198,7 +202,7 @@ def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, tsco
         plt.show(block=False)
         plt.pause(0.1)
 
-    return np.sqrt(p_ave), grand_p_ave, sem
+    return np.sqrt(p_ave), grand_p_ave, sem, [x, p]
 
 
 

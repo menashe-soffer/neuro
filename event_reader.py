@@ -147,7 +147,7 @@ class event_reader:
                 DISTRACT_END = time_in_cycle[np.argwhere([t == 'DISTRACT_END' for t in sublist]).squeeze()]
                 REC_START = time_in_cycle[np.argwhere([t == 'REC_START' for t in sublist]).squeeze()]
                 REC_END = time_in_cycle[np.argwhere([t == 'REC_END' for t in sublist]).squeeze()]
-                clr_legend = dict({'ORIENT': 7, 'WORD': 2, 'DISTRACT': 3, 'CNTDWN': 1, 'REC': 4, 'OUT': 5, 'TRIAL': 8, 'ENCODING': 6, 'PRACTICE': 10, 'WAITING': 9})
+                clr_legend = dict({'ORIENT': 7, 'WORD': 2, 'DISTRACT': 3, 'CNTDWN': 1, 'REC': 4, 'OUT': 5, 'TRIAL': 8, 'ENCODING': 6, 'PRACTICE': 10, 'WAITING': 9, 'NOTHING': 0})
                 if ORIENT > 0:
                     indicator_matrix[i_out_cycle, np.round(ORIENT / timeline_res).astype(int)] = clr_legend['ORIENT']
                 word_range = range(int(WORD_START / timeline_res), int(WORD_END / timeline_res))
@@ -268,15 +268,56 @@ if __name__ == '__main__':
     print('types between CNTDWN and WORD:', np.unique(interim_flat))
     #
     cmap = 'Paired'
-    img = np.concatenate(images)
     plt.imshow(np.concatenate(images), aspect='auto', cmap=cmap)
+    plt.grid(True)
     plt.xticks(xticks[0], xticks[1])
     plt.show()
-    img = np.zeros((len(clr_legend), 1))
-    yticks = [np.arange(len(clr_legend)), np.zeros(len(clr_legend), dtype=np.object_)]
-    for i, key in enumerate(clr_legend):
-        img[i] = clr_legend[key]
-        yticks[1][i] = key
+    #
+    # re-align to end and make histograms
+    REC_last, PRACTICE_last = [], []
+    img = np.concatenate(images)
+    for i in range(img.shape[0]):
+        line = img[i]
+        end_code = line[-1]
+        b = np.argwhere(line == end_code).flatten()[0]
+        line = np.concatenate((line[b:], line[:b]))
+        img[i] = line
+        #
+        if True:#np.any(line == clr_legend['WAITING']):
+            idxp = np.argwhere(line == clr_legend['PRACTICE'])
+            idxr = np.argwhere(line == clr_legend['REC'])
+            if idxp.size > 0:
+                PRACTICE_last.append(idxp.flatten().max())
+            elif idxr.size > 0:
+                REC_last.append(idxr.flatten().max())
     plt.imshow(img, aspect='auto', cmap=cmap)
-    plt.yticks(yticks[0], yticks[1])
+    plt.xticks(xticks[0], -np.flip(xticks[1]))
+    plt.xlim([int(0.75 * img.shape[1]), img.shape[1]])
+    plt.grid(True)
+    plt.show()
+    #
+    h = np.histogram((img.shape[1] - np.array(REC_last)) * 0.2, bins=np.arange(start=0, stop=20, step=0.2))
+    plt.bar(h[1][:-1], h[0], width=0.2)
+    plt.grid(True)
+    plt.show()
+    #
+    boundaries = np.arange(start=0, stop=img.shape[0], step=100)
+    for istart, istop in zip(boundaries[:-1], boundaries[1:]):
+        fig, ax = plt.subplots(1, 1)
+        ax.imshow(img, aspect='auto', cmap=cmap)
+        ax.set_xticks(xticks[0], -np.flip(xticks[1]))
+        ax.set_xlim([int(0.75 * img.shape[1]), img.shape[1]])
+        ax.set_ylim([istart, istop])
+        ax.grid(True)
+    plt.show()
+    #
+    codes, locs = np.unique(img.flatten(), return_index=True)
+    codes = codes[np.argsort(locs)]
+    annot = np.zeros(codes.size, dtype=np.object_)
+    for key in clr_legend:
+        idx = np.argwhere(clr_legend[key] == codes)
+        if idx.size == 1:
+            annot[idx] = key
+    plt.imshow(np.atleast_2d(codes).T, aspect='auto', cmap=cmap)
+    plt.yticks(np.arange(codes.size), annot)
     plt.show()
