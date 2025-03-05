@@ -4,6 +4,46 @@ import matplotlib.pyplot as plt # necessary for debug
 import time
 
 
+def my_hilbert(x, block_size=1024, overlap=0.5, axis=-1):
+    """Compute the Hilbert transform along a specified axis in smaller blocks."""
+    x = np.asarray(x)
+    N = x.shape[axis]
+    step = int(block_size * (1 - overlap))  # Step size for moving blocks
+    num_blocks = (N - block_size) // step + 1  # Number of blocks
+    analytic_signal = np.zeros_like(x, dtype=np.complex64)
+    window = np.bartlett(block_size)  # Smooth transition at edges
+
+    for i in range(num_blocks):
+        start = i * step
+        end = min(start + block_size, N)
+
+        block_slice = [slice(None)] * x.ndim
+        block_slice[axis] = slice(start, end)
+        block = x[tuple(block_slice)]
+
+        L = block.shape[axis]
+
+        # Compute FFT along the specified axis
+        Xf = np.fft.fft(block, n=L, axis=axis)
+
+        # Construct Hilbert transform filter
+        H = np.zeros(L, dtype=np.float32)
+        H[0] = 1
+        if L % 2 == 0:
+            H[L // 2] = 1  # Nyquist frequency
+        H[1:L // 2] = 2
+
+        # Apply the Hilbert filter
+        transformed_block = np.fft.ifft(Xf * H, n=L, axis=axis)
+
+        # Apply the window
+        transformed_block *= window
+
+        # Overlap-add reconstruction
+        analytic_signal[tuple(block_slice)] += transformed_block
+
+    return analytic_signal
+
 
 def split_to_subbands1(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, show_dbg=False, dbg_markers=None):
 
@@ -48,7 +88,22 @@ def split_to_subbands1(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs
     for i_band, filter in enumerate(filters):
         output_data[:, i_band, :] = scipy.signal.filtfilt(filter, 1, data)
 
-    h = scipy.signal.hilbert(output_data, axis=-1)
+    #h = scipy.signal.hilbert(output_data, axis=-1)
+    #
+    if output_data.shape[-1] > 3000000:
+        rc = 'signal longer that 1h:50m'
+        return rc, None, None
+    h = np.zeros(output_data.shape, dtype=np.complex64)
+    for i1 in range(output_data.shape[0]):
+        for i2 in range(output_data.shape[1]):
+            h[i1, i2] = my_hilbert(output_data[i1, i2], block_size=4096)
+            # plt.plot(np.real(h[i1, i2]), 'b')
+            # plt.plot(np.imag(h[i1, i2]), 'r')
+            # h[i1, i2] = scipy.signal.hilbert(output_data[i1, i2])
+            # plt.plot(np.real(h[i1, i2]), 'c')
+            # plt.plot(np.imag(h[i1, i2]), 'm')
+            # plt.show()
+    #
     p = np.real(h * np.conj(h))
 
     # 10ms averaging window
@@ -58,7 +113,7 @@ def split_to_subbands1(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs
         for i2 in range(p.shape[1]):
             p[i1, i2] = np.convolve(p[i1, i2], k, mode='same')
 
-    return output_data, p
+    return 0, output_data, p
 
 
 
@@ -123,7 +178,9 @@ def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, tsco
              plot_prefix=None, gen_plots=True, precalc=None):
 
     if precalc is None:
-        x, p = split_to_subbands1(data, sub_centers=sub_centers, subs_bw=subs_bw, fs=fs, show_dbg=False, dbg_markers=dbg_markers)
+        rc, x, p = split_to_subbands1(data, sub_centers=sub_centers, subs_bw=subs_bw, fs=fs, show_dbg=False, dbg_markers=dbg_markers)
+        if rc:
+            return rc, None, None, None, None
     else:
         x, p = precalc[0], precalc[1]
 
@@ -148,6 +205,8 @@ def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, tsco
         smps = marker + ave_scope_smps
         normalize_every_epoch = True
         if normalize_every_epoch:
+            # epoch_x = np.copy(x[:, :, smps[0] : smps[-1] + 1])
+            # epoch_p = np.copy(p[:, :, smps[0] : smps[-1] + 1])
             epoch_x = x[:, :, smps[0] : smps[-1] + 1]
             epoch_p = p[:, :, smps[0] : smps[-1] + 1]
             ave_p = epoch_p[:, :, norm_meas_mask].mean(axis=-1)
@@ -165,12 +224,14 @@ def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, tsco
         # averaging
         smps = marker + ave_scope_smps
         p_ave += p[:, :, smps[0] : smps[-1] + 1] * (1 / len(dbg_markers))
+        #p_ave += epoch_p * (1 / len(dbg_markers))
 
         # plotting non-averaged signal
         #print('going to create fig for marker', i_marker)
         if gen_plots:
             fig = plot_signals_by_chan_and_band(x, signal2=np.sqrt(p), avgsignal=[p_bandavg], band_centers=sub_centers, bw=20, fs=500, markers=[marker], chan_names=chan_names, tscope=tscope)
             fig.suptitle('marker ({})  at {:7.2f}'.format(i_marker + 1, marker / fs))
+            plt.show()
             if plot_prefix is not None:
                 fname = plot_prefix + 'marker_' + str(i_marker + 1)
                 fig.savefig(fname)
@@ -181,12 +242,12 @@ def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, tsco
 
     # final processing
     grand_p_ave_var = grand_p_ave_sqr - grand_p_ave ** 2
-    sem = np.sqrt(grand_p_ave_var / len(dbg_markers))
+    sem = np.sqrt(np.maximum(grand_p_ave, 0) / len(dbg_markers))
 
     if True: #not normalize_every_epoch:
         for i_chan in range(p_ave.shape[0]):
             for i_band in range(p_ave.shape[1]):
-                nf = p_ave[i_chan, i_band, norm_meas_mask].mean(axis=-1)
+                nf = p_ave[i_chan, i_band, norm_meas_mask].mean(axis=-1) + 1e-18
                 p_ave[i_chan, i_band] /= nf
                 sem /= nf
 
@@ -195,14 +256,17 @@ def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, tsco
                                             band_centers=sub_centers, bw=20, fs=500, markers=[np.argmin(np.abs(ave_scope_smps)).squeeze()],
                                             chan_names=chan_names, tscope=tscope, ovrd_ylim=[0.8, 2.2])
         fig.suptitle('avg. over {} events'.format(len(dbg_markers)))
-        fname = plot_prefix + 'average'
-        fig.savefig(fname)
-        print('saved:', fname)
+        plt.show()
+        if plot_prefix is not None:
+            fname = plot_prefix + 'average'
+            fig.savefig(fname)
+            print('saved:', fname)
 
         plt.show(block=False)
         plt.pause(0.1)
 
-    return np.sqrt(p_ave), grand_p_ave, sem, [x, p]
+    return 0, np.sqrt(p_ave), grand_p_ave, sem, [x, p]
+    #return np.sqrt(p_ave), np.sqrt(p_ave).mean(axis=1), sem, [x, p]
 
 
 

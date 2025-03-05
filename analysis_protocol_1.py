@@ -15,6 +15,9 @@ from my_tfr_wrapper_1 import calc_tfr
 
 def make_data_availability_list(base_folder, region_list, hemisphere_sel, read_dates=False):
 
+    # PATCH FOR READING START TIMES
+    start_times = pd.read_csv(os.path.join(base_folder, 'start_times.csv'))
+
     subject_list = get_subject_list(base_folder=base_folder)
     data = dict()
 
@@ -50,6 +53,12 @@ def make_data_availability_list(base_folder, region_list, hemisphere_sel, read_d
                 #
                 if read_dates:
                     subject_data['meas dates'].append(mne.io.read_raw_edf(path['signals'], preload=False).info['meas_date'])
+                else:
+                    ses_num = int(path['signals'][path['signals'].find('ses-'):][4])
+                    locate = (start_times['subject'].values == subject) * (start_times['session'].values ==ses_num) * [start_times['experiment'].values == 'FR1']
+                    i_in_tbl = np.argwhere(locate.squeeze()).squeeze()
+                    if i_in_tbl:
+                        subject_data['meas dates'].append(start_times.iloc[i_in_tbl]['datetime'])
 
             if total_contacts > 0:
                 data[subject] = subject_data
@@ -85,7 +94,7 @@ def calc_event_responces(paths, get_event_func, electrode_list, scan_files_only=
             valid_sessions += 1
     if valid_sessions < min_sess:
         rc = 'not enough sessions'
-        return rc, None
+        return rc, None, None, None, None
     #event_list, path_id_list = events[:max_sess], path_id_list[:max_sess]
 
     #print(subject, num_contacts, 'contacts', len(cntdwn_list), 'sessions')
@@ -95,8 +104,8 @@ def calc_event_responces(paths, get_event_func, electrode_list, scan_files_only=
         signals = my_mne_wrapper()
         signals.read_edf_file(fname=path['signals'], chanel_groups=electrode_list)
         if hasattr(signals, 'exceptions'):
-            rc = signals.exceptions + ' for {} {}'.format(subject, group)
-            return rc, None
+            rc = signals.exceptions# + ' for {}'.format(subject)
+            return rc, None, None, None, None
         event_reader_obj.align_to_sampling_rate(old_sfreq=signals.original_sfreq, new_sfreq=signals.get_mne().info['sfreq'])
         signals.preprocess(powerline=60)#, passband=[60, 160])
         #
@@ -131,8 +140,10 @@ def calc_event_responces(paths, get_event_func, electrode_list, scan_files_only=
             for i in range(num_avg_groups):
                 #print(path, signals.get_mne().get_data().shape)
                 print('>>>>>>       ', path['signals'])
-                _, p, sem, precalc = calc_HFB(signals.get_mne().get_data(), dbg_markers=events[eidx[0]:eidx[1], 0], chan_names=chan_names,
-                                              sub_centers=subs_centers, subs_bw=subs_bw, tscope=tscope, plot_prefix=None, gen_plots=False, precalc=precalc)
+                rc, _, p, sem, precalc = calc_HFB(signals.get_mne().get_data(), dbg_markers=events[eidx[0]:eidx[1], 0], chan_names=chan_names,
+                                                  sub_centers=subs_centers, subs_bw=subs_bw, tscope=tscope, plot_prefix=None, gen_plots=False, precalc=precalc)
+                if rc:
+                    return rc, None, None, None, None
                 boundaries = np.arange(start=0, stop=p.shape[1]+1, step=int(signals.get_mne().info['sfreq'] * timebin_sec))
                 p_list[-1].append(np.array([p[:, b1:b2].mean(axis=1) for (b1, b2) in zip(boundaries[:-1], boundaries[1:])]).T)
                 sem_list[-1].append(np.array([sem[:, b1:b2].mean(axis=1) for (b1, b2) in zip(boundaries[:-1], boundaries[1:])]).T)
@@ -152,8 +163,12 @@ def get_paths_and_electrode_list(base_folder, subject, regions, sides):
         rc = subject + ':   no paths'
         return rc, None, None, None
 
-    montage = my_montage_reader(fname=paths[0]['electrodes'])
-    electrode_list = montage.get_electrode_list_by_region(region_list=regions, hemisphere_sel=sides)
+    try:
+        montage = my_montage_reader(fname=paths[0]['electrodes'])
+        electrode_list = montage.get_electrode_list_by_region(region_list=regions, hemisphere_sel=sides)
+    except:
+        rc = 'fail to make electrode list for {}'.format(subject)
+        return rc, None, None, None
     contact_list = []
     for group in electrode_list:
         for e in electrode_list[group]:  # adding the group indication to the list
@@ -185,7 +200,9 @@ def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], ti
 
     rc, p_list, sem_list, desc_list, chan_names = calc_event_responces(paths=paths, get_event_func=event_reader.get_countdowns,
                                                                        electrode_list=electrode_list, scan_files_only=scan_files_only,
-                                                                       subs_centers=subs_centers, subs_bw=subs_bw, tscope=tscope, timebin_sec=timebin_sec)
+                                                                       subs_centers=subs_centers, subs_bw=subs_bw, tscope=tscope, timebin_sec=timebin_sec,
+                                                                       min_events_in_sess=4, avg_depth=2, num_avg_groups=2, between_avg=2,
+                                                                       min_sess=2, min_contacts=2)
 
     if rc:
         return subject + ':  ' + rc, None
@@ -224,6 +241,45 @@ def calc_contdwn_responces(subject, regions=None, sides=None, band=[40, 100], ti
         return rc, dict({'p': p_list, 'sem': sem_list, 'desc': desc_list, 'fig': fig, 'contact list': contact_list})
 
 
+
+
+def calc_word_responces(subject, regions=None, sides=None, band=[40, 100], timebin_sec=0.5, tscope=[-1, 10],
+                        avg=6, in_session_gap=13, mode='monopolar', scan_files_only=True, display_span=3):
+
+    # configurations for the sub=band processor
+    # generate the sub-band spec for the processing
+    subs_centers = np.linspace(start=band[0], stop=band[-1], num=int((band[-1] - band[0]) / 10 + 1.5))
+    subs_centers = (subs_centers[:-1] + subs_centers[1:]) / 2
+    subs_bw = np.diff(subs_centers)[0]
+
+
+    rc, paths, contact_list, electrode_list = get_paths_and_electrode_list(base_folder=base_folder, subject=subject, regions=regions, sides=sides)
+    if rc:
+        return subject + ':  ' + rc, None
+    num_contacts = len(contact_list)
+
+    tscope = [-0.6, 1.5]
+    timebin_sec = 0.1
+    min_events, max_events = 250, 350
+    avg_depth = 25
+    num_avg_groups = 10
+    between_avg = avg_depth
+
+    rc, p_list, sem_list, desc_list, chan_names = calc_event_responces(paths=paths, get_event_func=event_reader.get_word_events,
+                                                                       electrode_list=electrode_list, scan_files_only=scan_files_only,
+                                                                       subs_centers=subs_centers, subs_bw=subs_bw, tscope=tscope, timebin_sec=timebin_sec,
+                                                                       min_events_in_sess=min_events, max_events_in_sess=max_events,
+                                                                       avg_depth=avg_depth, num_avg_groups=num_avg_groups, between_avg=between_avg)
+
+    if rc:
+        return rc, None
+    else:
+        rc = subject
+        return rc, dict({'p': p_list, 'sem': sem_list, 'desc': desc_list, 'fig': None, 'contact list': contact_list})
+
+
+
+
 def run_analysis_protocol_1(subject_list, mode='bipolar', region_list=[], avg_depth=13, ovld_thd=4):
     display_span = ovld_thd * 0.75
 
@@ -233,82 +289,92 @@ def run_analysis_protocol_1(subject_list, mode='bipolar', region_list=[], avg_de
     for subject in subject_list:
         rc, data = calc_contdwn_responces(subject, regions=region_list, sides=hemisphere_sel, mode=mode,
                                           scan_files_only=False, avg=avg_depth, display_span=display_span, tscope=[-5, 10], timebin_sec=0.1)
+        # rc, data = calc_word_responces(subject, regions=region_list, sides=hemisphere_sel, mode=mode, scan_files_only=False)
         print(subject, rc)
         logfile_fd.write(rc + '\n')
         logfile_fd.flush()
         if data is not None:
-            data['fig'].suptitle(subject + '\navg={}'.format(avg_depth))
-            fname = os.path.join(base_folder, 'plots', subject + '_' + mode + '_raw_avgs_' + str(avg_depth) + '.png')
-            data['fig'].savefig(fname)
-            if mode == 'monopolar':
-                pass
-            else:
-                contacts = ['{}-{}  ({} , {})   {} {}'.format(d[0]['name'], d[1]['name'], d[0]['group'], d[1]['group'],
-                                                               str(np.round(d[0]['coords'].squeeze(), decimals=2)),
-                                                               str(np.round(d[1]['coords'].squeeze(), decimals=2))) for d in data['contact list']]
-            fname = os.path.join(base_folder, 'plots', subject + '_' + mode)
-            np.savez(fname, p=data['p'], sem=data['sem'], contacts=np.array(contacts))
-            #
-            #
-            #
-            #
-            # visualize
-            nchans, nses = data['p'][0][0].shape[0], len(data['p'])
-            num_lags = 4  # how many time taps to visualize
-            vectors = np.zeros((2, nses, nchans, num_lags))
-            #
-            fig, ax = plt.subplots(2, num_lags, num='pierson', figsize=(15, 10))
-            fig.clf()
-            fig, ax = plt.subplots(2, num_lags, num='pierson', figsize=(15, 10))
-            for i_lag in range(num_lags):
-                ax[0, i_lag].grid(True)
-                ax[0, i_lag].set_ylim([0.5, display_span])
-                ax[0, i_lag].set_title('{:2.1f} - {:2.1f} sec.'.format(i_lag / 2, (i_lag + 1) / 2))
-            #
-            for i_ses, (p_ses, sem_ses) in enumerate(zip(data['p'], data['sem'])):
-                for i_rpt in range(2):
-                    # normalize the data
-                    nf = np.tile(p_ses[i_rpt][:, 0], (p_ses[i_rpt].shape[1], 1)).T
-                    # p_ses[i_rpt] /= nf
-                    # sem_ses[i_rpt] /= nf
-                    vectors[i_rpt, i_ses] = p_ses[i_rpt][:, 1:num_lags + 1] / nf[:, 1:num_lags + 1]
-                    for i_lag in range(num_lags):
-                        ax[0, i_lag].plot(vectors[i_rpt, i_ses, :, i_lag], label='s{}r{}'.format(i_ses + 1, i_rpt + 1))
-            # pierson correlation
+            try:
+                fname = os.path.join(base_folder, 'plots', subject + '_' + mode)
+                np.savez(fname, p=data['p'], sem=data['sem'], contacts=np.array(data['contact list']))
+                if data['fig'] is not None:
+                    data['fig'].suptitle(subject + '\navg={}'.format(avg_depth))
+                    fname = os.path.join(base_folder, 'plots', subject + '_' + mode + '_raw_avgs_' + str(avg_depth) + '.png')
+                    data['fig'].savefig(fname)
+                    if mode == 'monopolar':
+                        pass
+                    else:
+                        contacts = ['{}-{}  ({} , {})   {} {}'.format(d[0]['name'], d[1]['name'], d[0]['group'], d[1]['group'],
+                                                                       str(np.round(d[0]['coords'].squeeze(), decimals=2)),
+                                                                       str(np.round(d[1]['coords'].squeeze(), decimals=2))) for d in data['contact list']]
+                #
+                #
+                #
+                #
+                # visualize
+                nchans, nses = data['p'][0][0].shape[0], len(data['p'])
+                num_lags = 4  # how many time taps to visualize
+                vectors = np.zeros((2, nses, nchans, num_lags))
+                #
+                fig, ax = plt.subplots(2, num_lags, num='pierson', figsize=(15, 10))
+                fig.clf()
+                fig, ax = plt.subplots(2, num_lags, num='pierson', figsize=(15, 10))
+                for i_lag in range(num_lags):
+                    ax[0, i_lag].grid(True)
+                    ax[0, i_lag].set_ylim([0.5, display_span])
+                    ax[0, i_lag].set_title('{:2.1f} - {:2.1f} sec.'.format(i_lag / 2, (i_lag + 1) / 2))
+                #
+                for i_ses, (p_ses, sem_ses) in enumerate(zip(data['p'], data['sem'])):
+                    for i_rpt in range(2):
+                        # normalize the data
+                        nf = np.tile(p_ses[i_rpt][:, 0], (p_ses[i_rpt].shape[1], 1)).T
+                        # p_ses[i_rpt] /= nf
+                        # sem_ses[i_rpt] /= nf
+                        vectors[i_rpt, i_ses] = p_ses[i_rpt][:, 1:num_lags + 1] / nf[:, 1:num_lags + 1]
+                        for i_lag in range(num_lags):
+                            ax[0, i_lag].plot(vectors[i_rpt, i_ses, :, i_lag], label='s{}r{}'.format(i_ses + 1, i_rpt + 1))
+                # pierson correlation
 
-            n1, n2, nchans, nlags = vectors.shape
-            ur_vectors = vectors.reshape(n1 * n2, nchans, nlags)
-            pc = np.zeros((n1 * n2, n1 * n2))
-            for i_lag in range(nlags):
-                tap_vectors = ur_vectors[:, :, i_lag]
-                mu = tap_vectors.mean(axis=0)
-                ax[0, i_lag].plot(mu, ':', linewidth=2, label='avg')
-                ax[0, i_lag].legend()
-                # plain covariance
-                c = (tap_vectors - mu) @ (tap_vectors - mu).T
-                sigma = np.sqrt(np.diag(c))
-                for i in range(c.shape[0]):
-                    c[:, i] /= sigma[i]
-                    c[i, :] /= sigma[i]
-                # pairwise pierson
-                for i1 in range(n1 * n2):
-                    for i2 in range(n1 * n2):
-                        tap_vector_ij = tap_vectors[(i1, i2), :]
-                        # tap_vector_ij = tap_vector_ij * (tap_vector_ij < ovld_thd) # PATCH!!! FOR HIGH LEVEL NOISES
-                        muij = tap_vector_ij.mean(axis=1)
-                        dij = tap_vector_ij - muij.reshape(2, 1)
-                        pc[i1, i2] = (dij[0].reshape(1, nchans) @ dij[1].reshape(nchans, 1)).squeeze() / (
-                                    np.linalg.norm(dij[0]) * np.linalg.norm(dij[1]) + 1e-12)
-                        # pc[i1, i2] = np.corrcoef(tap_vector_ij)[0, 1]
+                n1, n2, nchans, nlags = vectors.shape
+                ur_vectors = vectors.reshape(n1 * n2, nchans, nlags)
+                pc = np.zeros((n1 * n2, n1 * n2))
+                for i_lag in range(nlags):
+                    tap_vectors = ur_vectors[:, :, i_lag]
+                    mu = tap_vectors.mean(axis=0)
+                    ax[0, i_lag].plot(mu, ':', linewidth=2, label='avg')
+                    ax[0, i_lag].legend()
+                    # plain covariance
+                    c = (tap_vectors - mu) @ (tap_vectors - mu).T
+                    sigma = np.sqrt(np.diag(c))
+                    for i in range(c.shape[0]):
+                        c[:, i] /= sigma[i]
+                        c[i, :] /= sigma[i]
+                    # pairwise pierson
+                    for i1 in range(n1 * n2):
+                        for i2 in range(n1 * n2):
+                            tap_vector_ij = tap_vectors[(i1, i2), :]
+                            # tap_vector_ij = tap_vector_ij * (tap_vector_ij < ovld_thd) # PATCH!!! FOR HIGH LEVEL NOISES
+                            muij = tap_vector_ij.mean(axis=1)
+                            dij = tap_vector_ij - muij.reshape(2, 1)
+                            pc[i1, i2] = (dij[0].reshape(1, nchans) @ dij[1].reshape(nchans, 1)).squeeze() / (
+                                        np.linalg.norm(dij[0]) * np.linalg.norm(dij[1]) + 1e-12)
+                            # pc[i1, i2] = np.corrcoef(tap_vector_ij)[0, 1]
 
-                sns.heatmap(np.round(pc, decimals=2), ax=ax[1, i_lag], vmin=-1, vmax=1, annot=True, cbar=False,
-                            square=True)
+                    sns.heatmap(np.round(pc, decimals=2), ax=ax[1, i_lag], vmin=-1, vmax=1, annot=True, cbar=False,
+                                square=True)
 
-            fig.suptitle('PAIRWISE pearson correlation    ' + subject + '\navg={}'.format(avg_depth))
-            fname = os.path.join(base_folder, 'plots', subject + '-' + mode + '_pearson' + str(avg_depth) + '.png')
-            fig.savefig(fname)
-            plt.show(block=False)
-            plt.pause(0.25)
+                fig.suptitle('PAIRWISE pearson correlation    ' + subject + '\navg={}'.format(avg_depth))
+                fname = os.path.join(base_folder, 'plots', subject + '-' + mode + '_pearson' + str(avg_depth) + '.png')
+                fig.savefig(fname)
+                plt.show(block=False)
+                plt.pause(0.25)
+            except:
+                message_text = 'UNSPECIFIED FAILURE FOR  ' + subject
+                message = 75*'*' + '\n' + '**\n**' + message_text + '\n**\n' + 75*'*' + '\n'
+                print(message)
+                logfile_fd.write(rc + '\n')
+                logfile_fd.flush()
+
 
     logfile_fd.close()
 
@@ -328,17 +394,34 @@ if False:
 # parameters for the protocol
 # regions = ['fusiform', 'inferiortemporal', 'lateraloccipital', 'lingual']
 # sides = ['LR', 'LR', 'LR', 'both']
-subject_list = ['sub-R1243T', 'sub-R1281E', 'sub-R1334T', 'sub-R1338T', 'sub-R1346T', 'sub-R1355T', 'sub-R1425D',
-                'sub-R1299T', 'sub-R1065J', 'sub-R1060M', 'sub-R1092J', 'sub-R1292E', 'sub-R1308T', 'sub-R1315T', 'sub-R1350D',
-                'sub-R1094T', 'sub-R1123C', 'sub-R1153T', 'sub-R1154D', 'sub-R1156D', 'sub-R1161E', 'sub-R1168T', 'sub-R1223E']
 mode =  'bipolar'#'monopolar'#
-subject_list = ['sub-R1060M', 'sub-R1065J', 'sub-R1092J', 'sub-R1094T', 'sub-R1123C', 'sub-R1145J', 'sub-R1153T',
-                'sub-R1154D', 'sub-R1161E', 'sub-R1168T', 'sub-R1195E', 'sub-R1223E', 'sub-R1243T', 'sub-R1281E', 'sub-R1292E',
-                'sub-R1299T', 'sub-R1308T', 'sub-R1315T', 'sub-R1334T', 'sub-R1338T', 'sub-R1341T', 'sub-R1350D', 'sub-R1355T', 'sub-R1425D']
+#subject_list = get_subject_list(base_folder=base_folder)
 
-region_list, hemisphere_sel = region_list[3:4], hemisphere_sel[3:4]
-if False:
+
+#region_list, hemisphere_sel = region_list[3:4], hemisphere_sel[3:4]
+subject_list =  ['sub-R1001P', 'sub-R1002P', 'sub-R1003P', 'sub-R1006P', 'sub-R1010J', 'sub-R1034D', 'sub-R1054J', 'sub-R1059J', 'sub-R1060M', 'sub-R1065J',
+                 'sub-R1066P', 'sub-R1067P', 'sub-R1068J', 'sub-R1070T', 'sub-R1077T', 'sub-R1080E', 'sub-R1083J', 'sub-R1092J', 'sub-R1094T', 'sub-R1100D',
+                 'sub-R1106M', 'sub-R1108J', 'sub-R1111M', 'sub-R1112M', 'sub-R1113T', 'sub-R1118N', 'sub-R1123C', 'sub-R1124J', 'sub-R1125T', 'sub-R1134T',
+                 'sub-R1136N', 'sub-R1145J', 'sub-R1147P', 'sub-R1153T', 'sub-R1154D', 'sub-R1158T', 'sub-R1161E', 'sub-R1163T', 'sub-R1167M', 'sub-R1168T',
+                 'sub-R1170J', 'sub-R1171M', 'sub-R1172E', 'sub-R1174T', 'sub-R1177M', 'sub-R1195E', 'sub-R1196N', 'sub-R1201P', 'sub-R1202M', 'sub-R1204T',
+                 'sub-R1215M', 'sub-R1226D', 'sub-R1234D', 'sub-R1240T', 'sub-R1243T', 'sub-R1281E', 'sub-R1283T', 'sub-R1293P', 'sub-R1297T', 'sub-R1299T',
+                 'sub-R1302M', 'sub-R1308T', 'sub-R1309M', 'sub-R1310J', 'sub-R1311T', 'sub-R1315T', 'sub-R1316T', 'sub-R1317D', 'sub-R1323T', 'sub-R1325C',
+                 'sub-R1328E', 'sub-R1331T', 'sub-R1334T', 'sub-R1336T', 'sub-R1337E', 'sub-R1338T', 'sub-R1341T', 'sub-R1345D', 'sub-R1346T', 'sub-R1350D',
+                 'sub-R1354E', 'sub-R1355T', 'sub-R1361C', 'sub-R1363T', 'sub-R1367D', 'sub-R1374T', 'sub-R1377M', 'sub-R1378T', 'sub-R1379E', 'sub-R1385E',
+                 'sub-R1386T', 'sub-R1387E', 'sub-R1391T', 'sub-R1394E', 'sub-R1396T', 'sub-R1405E', 'sub-R1415T', 'sub-R1416T', 'sub-R1420T', 'sub-R1422T',
+                 'sub-R1425D', 'sub-R1427T', 'sub-R1443D', 'sub-R1449T', 'sub-R1463E', 'sub-R1542J']
+
+
+if True:
+    import glob
+    success_list = [n[n.find('sub-'):][:10] for n in glob.glob(os.path.join(base_folder, 'plots', '*.npz'))]
+    fail_list = []
+    for n in subject_list:
+        fail_list = fail_list + [n] if not (n in success_list) else fail_list
+    subject_list = fail_list
+
     run_analysis_protocol_1(subject_list, mode='bipolar', region_list=region_list)
+
 
 
 def pairwise_pearson(data, axis=-1):
@@ -385,9 +468,10 @@ def remove_one_contact(p, mask):
         return mask
 
 
-if True:
+if False:
+    #subject_list = ['lingual/sub-R1123C']
     paggr = np.zeros((3, 2, 0, 21))
-    paggr = np.zeros((3, 2, 0, 150))
+    paggr = np.zeros((2, 2, 0, 150))
     contacts = np.zeros(0, dtype=str)
     for subject in subject_list:
         fname = os.path.join(base_folder, 'plots', subject + '_' + mode + '.npz')
@@ -396,65 +480,66 @@ if True:
             p, sem = data['p'][:3], data['sem'][:3]
             paggr = np.concatenate((paggr, p), axis=2)
             # contacts = np.concatenate((contacts, data['contacts']))
-            contacts = np.concatenate((contacts, np.array([c.split()[0] for c in data['contacts']])))
+            #contacts = np.concatenate((contacts, np.array([c.split()[0] for c in data['contacts']])))
             print('read', fname, 'aggr. shape:', paggr.shape)
         except:
             print('can''t read', fname)
 
-    #paggr[:, :, :, 1] = paggr[:, :, :, (1, 2, 3, 4)].mean(axis=-1)
+    # #paggr[:, :, :, 1] = paggr[:, :, :, (1, 2, 3, 4)].mean(axis=-1)
+    # #
+    # # calc the contact varainces
+    # nrpts = np.prod(paggr.shape[:2])
+    # paggr = paggr.reshape(nrpts, paggr.shape[2], paggr.shape[3])
+    # #
+    # REMOVE_OUTLAIRS = True
+    # if REMOVE_OUTLAIRS:
+    #     paggr = paggr * (paggr < 19)
+    # # post-stimulus time histogram (PSTH)
+    # PSTH_mean = paggr.mean(axis=(0, 1))
+    # PSTH_std = paggr.std(axis=(0, 1))
+    # PSTH_sem = PSTH_std / np.sqrt(PSTH_std.shape[0])
+    # tscale = np.linspace(start=-0.6, stop=1.5, num=PSTH_mean.size)
+    # plt.bar(tscale, PSTH_mean, width=0.08, facecolor='w', edgecolor='b', log=False)
+    # plt.bar(tscale, 2 * PSTH_sem, bottom = PSTH_mean - PSTH_sem, width=0.04, color='k', log=False)
+    # plt.grid()
+    # plt.title(subject)
+    # plt.show()
     #
-    # calc the contact varainces
-    nrpts = np.prod(paggr.shape[:2])
-    paggr = paggr.reshape(nrpts, paggr.shape[2], paggr.shape[3])
-    #
-    REMOVE_OUTLAIRS = True
-    if REMOVE_OUTLAIRS:
-        paggr = paggr * (paggr < 19)
-    # post-stimulus time histogram (PSTH)
-    PSTH_mean = paggr.mean(axis=(0, 1))
-    PSTH_std = paggr.std(axis=(0, 1))
-    PSTH_sem = PSTH_std / np.sqrt(PSTH_std.shape[0])
-    tscale = np.linspace(start=-1, stop=10, num=150)
-    plt.bar(tscale, PSTH_mean, width=0.08, facecolor='w', edgecolor='b', log=False)
-    plt.bar(tscale, 2 * PSTH_sem, bottom = PSTH_mean - PSTH_sem, width=0.04, color='k', log=False)
-    plt.grid()
-    plt.show()
-    #
-    for sec_choice in [0, 5, 9, 10, 12, 16, -1, -5]:
-        fig, ax = plt.subplots(1, 1, figsize=(12, 6))
-        bin1 = int(2 * (5.5 + sec_choice))
-        p1 = paggr[:, :, bin1:bin1+2].mean(axis=-1)
-        pmean = p1.mean(axis=0)
-        pstd = p1.std(axis=0)
-        psem = pstd / np.sqrt(nrpts)
-        idx = np.argsort(pmean)
-        ax.bar(np.arange(paggr.shape[1]), pmean[idx], width=0.75, facecolor='w', edgecolor='b', log=True)
-        # ax.plot(pmean[idx], 'b')
-        # ax.fill_between(np.arange(paggr.shape[1]), pmean[idx] - pstd[idx], pmean[idx] + pstd[idx], color='b', alpha=.15)
-        # ax.bar(np.arange(paggr.shape[1]), pmean[idx] + pstd[idx], width=0.4)
-        # ax.bar(np.arange(paggr.shape[1]), pmean[idx] + psem[idx], width=0.4)
-        ax.bar(np.arange(paggr.shape[1]), 2 * psem[idx], bottom = pmean[idx] - psem[idx], width=0.3, color='k', log=True)
-        ax.grid(True)
-        if sec_choice < 0:
-            ax.set_title('{} .. {} before countdown'.format(sec_choice, sec_choice + 1))
-        if sec_choice == 0:
-            ax.set_title('first countdown second')
-        if (sec_choice > 0) and (sec_choice < 10):
-            ax.set_title('countdown onset + {} to countdown + {}'.format(sec_choice, sec_choice + 1))
-        if sec_choice >= 10:
-            ax.set_title('{} to {} after countdown end'.format(sec_choice - 10, sec_choice - 9))
-        #ax.set_ylim([-0.5, 5])
-        ax.set_ylim([0.5, 15])
-        plt.show()
-        fig.savefig(os.path.join(base_folder, 'plots', 'variances-sec-{}'.format(sec_choice)))
-    assert False
+    # for sec_choice in [0, 5, 9, 10, 12, 16, -1, -5]:
+    #     fig, ax = plt.subplots(1, 1, figsize=(12, 6))
+    #     bin1 = int(2 * (5.5 + sec_choice))
+    #     p1 = paggr[:, :, bin1:bin1+2].mean(axis=-1)
+    #     pmean = p1.mean(axis=0)
+    #     pstd = p1.std(axis=0)
+    #     psem = pstd / np.sqrt(nrpts)
+    #     idx = np.argsort(pmean)
+    #     ax.bar(np.arange(paggr.shape[1]), pmean[idx], width=0.75, facecolor='w', edgecolor='b', log=True)
+    #     # ax.plot(pmean[idx], 'b')
+    #     # ax.fill_between(np.arange(paggr.shape[1]), pmean[idx] - pstd[idx], pmean[idx] + pstd[idx], color='b', alpha=.15)
+    #     # ax.bar(np.arange(paggr.shape[1]), pmean[idx] + pstd[idx], width=0.4)
+    #     # ax.bar(np.arange(paggr.shape[1]), pmean[idx] + psem[idx], width=0.4)
+    #     ax.bar(np.arange(paggr.shape[1]), 2 * psem[idx], bottom = pmean[idx] - psem[idx], width=0.3, color='k', log=True)
+    #     ax.grid(True)
+    #     if sec_choice < 0:
+    #         ax.set_title('{} .. {} before countdown'.format(sec_choice, sec_choice + 1))
+    #     if sec_choice == 0:
+    #         ax.set_title('first countdown second')
+    #     if (sec_choice > 0) and (sec_choice < 10):
+    #         ax.set_title('countdown onset + {} to countdown + {}'.format(sec_choice, sec_choice + 1))
+    #     if sec_choice >= 10:
+    #         ax.set_title('{} to {} after countdown end'.format(sec_choice - 10, sec_choice - 9))
+    #     #ax.set_ylim([-0.5, 5])
+    #     ax.set_ylim([0.5, 15])
+    #     plt.show()
+    #     fig.savefig(os.path.join(base_folder, 'plots', 'variances-sec-{}'.format(sec_choice)))
+    # #assert False
     #
 
     num_contacts = paggr.shape[2]
-    paggr = np.concatenate((paggr[0], paggr[1], paggr[2]), axis=0)
+    paggr = np.concatenate((paggr[0], paggr[1]), axis=0)#np.concatenate((paggr[0], paggr[1], paggr[2]), axis=0)
     admit = np.zeros(num_contacts, dtype='bool')
     for i_chan in range(num_contacts):
-        show = False
+        show = True
         if show:
             plt.clf()
             plt.plot(paggr[:, i_chan].flatten())
@@ -464,7 +549,7 @@ if True:
             plt.ylim([0.5, 10])
             plt.grid(True)
         q6, q114, q119 = sorted[5], sorted[113], sorted[-1]
-        admit[i_chan] = (q6 > 0.8) * (q114 > 1.6) * (q119 < (10 * q114)) * (q119 < 150)
+        admit[i_chan] = True#(q6 > 0.8) * (q114 > 1.6) * (q119 < (10 * q114)) * (q119 < 150)
         if show and admit[i_chan]:
             plt.title('{},  q6: {:4.1f}  q114:  {:4.1f}    max: {:4.1f}'.format(i_chan, q6, q114, q119))
             plt.show(block=False)

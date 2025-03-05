@@ -83,13 +83,12 @@ class my_mne_wrapper:
 
 
 
-
 if __name__ == '__main__':
 
-    from my_montage_reader import my_montage
+    from my_montage_reader import my_montage_reader
 
     montage_fname = 'E:/ds004789-download/sub-R1001P/ses-0/ieeg/sub-R1001P_ses-0_task-FR1_space-MNI152NLin6ASym_electrodes.tsv'
-    montage = my_montage(fname=montage_fname)
+    montage = my_montage_reader(fname=montage_fname)
     region_list = ['entorihinal', 'cuneus', 'fusiform', 'lateraloccipital', 'lingual', 'precuneus', 'superiorpariental']
     hemisphere_sel = ['LR', 'both', 'LR', 'LR', 'both', 'both', 'LR']
     electrode_list = montage.get_electrode_list_by_region(region_list=region_list, hemisphere_sel=hemisphere_sel)

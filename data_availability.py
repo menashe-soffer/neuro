@@ -61,17 +61,18 @@ def make_data_availability_list(base_folder, region_list, hemisphere_sel):
             print('failed for', subject)
 
     return data
-    # # generate excel file
-    # df = pd.DataFrame.from_dict(data).T
-    # # "flatening" the contact counts - failed to do it so I made it flat in the first place
-    # writer = pd.ExcelWriter('E:/ds004789-download/data_availability_for_protocol_1.xlsx', engine='xlsxwriter')
-    # df.to_excel(writer, sheet_name='.'.join([r[::2][:4] for r in region_list])[:31])
-    # writer.close()
+    # generate excel file
+    df = pd.DataFrame.from_dict(data).T
+    # "flatening" the contact counts - failed to do it so I made it flat in the first place
+    writer = pd.ExcelWriter('E:/ds004789-download/data_availability_for_protocol_1.xlsx', engine='xlsxwriter')
+    df.to_excel(writer, sheet_name='.'.join([r[::2][:4] for r in region_list])[:31])
+    writer.close()
 
-def process_raw_data(data):
+def process_raw_data(data, ovrd_times=None):
 
     subjects_list = list(data.keys())
 
+    miss_cnt, hit_cnt, deltas_list = 0, 0, []
     for subject in subjects_list:
         subject_data = data[subject]
 
@@ -101,15 +102,41 @@ def process_raw_data(data):
 
 
         # add time between sessions
-        # TBD
         sess_names = list(subject_data['sessions'].keys())
-        base_date_str = subject_data['sessions'][sess_names[0]]['date']
-        base_timestamp = datetime.datetime.timestamp(base_date_str)
         #print('')
-        for name in sess_names:
+        for i_sess, name in enumerate(sess_names):
+            if ovrd_times is not None:
+                locate = (ovrd_times['subject'].values == subject) * (ovrd_times['session'].values == int(name[-1])) * [ovrd_times['experiment'].values == 'FR1']
+                i = np.argwhere(locate.squeeze()).squeeze()
+                # subject_data['sessions'][name]['date'] = ovrd_times.iloc[i]['datetime']
+                if i.size != 1:
+                    miss_cnt += 1
+                    print(subject, name, i.size)
+                    for i1 in np.argwhere((ovrd_times['subject'].values == subject) * (ovrd_times['session'].values == int(name[-1]))).flatten():
+                        print('\t', i1, ovrd_times.iloc[i1]['experiment'])
+                else:
+                    hit_cnt += 1
+                    subject_data['sessions'][name]['date'] = datetime.datetime.strptime(ovrd_times.iloc[i]['datetime'], '%Y-%m-%d %H:%M:%S')
+                    print(subject, name, i.size, '--- OK', subject_data['sessions'][name]['date'])
+                #subject_data['sessions'][name]['date'] = datetime.datetime.fromtimestamp(ovrd_times.iloc[i]['mstime'] / 1000)# TBD fix timezone
+            if i_sess == 0:
+                base_date_str = subject_data['sessions'][sess_names[0]]['date']
+                base_timestamp = datetime.datetime.timestamp(base_date_str)
             subject_data['sessions'][name]['timestamp'] = datetime.datetime.timestamp(subject_data['sessions'][name]['date'])
             subject_data['sessions'][name]['relative timestamp'] = subject_data['sessions'][name]['timestamp'] - base_timestamp
             #print(subject, name, subject_data['sessions'][name]['date'])
+            if subject_data['sessions'][name]['relative timestamp'] != 0:
+                print(subject_data['sessions'][name]['relative timestamp'] / 3600)
+                deltas_list.append(subject_data['sessions'][name]['relative timestamp'])
+
+    print('miss: {}   hit:  {}'.format(miss_cnt, hit_cnt))
+    deltas_list = np.array(deltas_list) / 3600
+    deltas_list = deltas_list[(np.abs(deltas_list) < 1000) * (np.abs(deltas_list) >= 1)]
+    h = np.histogram(np.array(deltas_list), bins=np.linspace(start=-100, stop=1000, num=1101))
+    plt.bar(h[1][1:], h[0])
+    plt.grid(True)
+    plt.xlabel('hours from sess-0')
+    plt.show()
 
     return data
 
@@ -130,7 +157,7 @@ def make_availity_list_by_rules(data, region_list, min_sessions=3, countdown_ran
 
         for session_name in subject_data['sessions']:
             session = subject_data['sessions'][session_name]
-            n = session['num_countdowns']
+            n = session['num countdowns']
             if (n >= countdown_range[0]) and (n <= countdown_range[-1]):
                 session_list[session_name] = session
 
@@ -143,6 +170,8 @@ def make_availity_list_by_rules(data, region_list, min_sessions=3, countdown_ran
 READ_FILES = False
 
 base_folder = 'E:/ds004789-download'
+
+start_times = pd.read_csv(os.path.join(base_folder, 'start_times.csv'))
 
 # area of interest definition
 all_regions = ['bankssts', 'caudalanteriorcingulate', 'caudalmiddlefrontal', 'cuneus', 'entorhinal', 'frontalpole', 'fusiform',
@@ -163,12 +192,12 @@ if READ_FILES:
 # process the files
 with open(os.path.join(base_folder, 'raw_availability_data'), 'rb') as fd:
     raw_availability_data = pickle.load(fd)
-availability_data = process_raw_data(raw_availability_data)
+availability_data = process_raw_data(raw_availability_data, ovrd_times=start_times)
 
 
 region_list = ['fusiform-R', 'inferiortemporal-R', 'lateraloccipital-R', 'lingual-R', 'fusiform-L', 'inferiortemporal-L', 'lateraloccipital-L', 'lingual-L']
 #hemisphere_sel = ['LR', 'LR', 'LR', 'both']
-admit_list = make_availity_list_by_rules(availability_data, region_list)
+admit_list = make_availity_list_by_rules(availability_data, region_list, min_sessions=3, countdown_range=[26, 26], )
 print(admit_list.keys())
 
 

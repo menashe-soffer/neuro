@@ -37,7 +37,7 @@ class my_montage_reader:
         for i in range(self.df.shape[0]):
             line = self.df.iloc[i]
             for i_region, region in enumerate(region_list):
-                if region == line['ind.region']:
+                if ('ind.region' in line.keys()) and (region == line['ind.region']):
 
                     admit = False
                     if hemisphere_sel_list[i_region] == 'both':
