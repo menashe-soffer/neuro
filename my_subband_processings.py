@@ -45,7 +45,7 @@ def my_hilbert(x, block_size=1024, overlap=0.5, axis=-1):
     return analytic_signal
 
 
-def split_to_subbands1(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, show_dbg=False, dbg_markers=None):
+def split_to_subbands1(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, show_dbg=False, dbg_markers=None, normalize=False):
 
     num_chans = data.shape[0]
 
@@ -90,9 +90,9 @@ def split_to_subbands1(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs
 
     #h = scipy.signal.hilbert(output_data, axis=-1)
     #
-    if output_data.shape[-1] > 3000000:
-        rc = 'signal longer that 1h:50m'
-        return rc, None, None
+    # if output_data.shape[-1] > 3000000:
+    #     rc = 'signal longer that 1h:50m'
+    #     return rc, None, None
     h = np.zeros(output_data.shape, dtype=np.complex64)
     for i1 in range(output_data.shape[0]):
         for i2 in range(output_data.shape[1]):
@@ -112,6 +112,8 @@ def split_to_subbands1(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs
     for i1 in range(p.shape[0]):
         for i2 in range(p.shape[1]):
             p[i1, i2] = np.convolve(p[i1, i2], k, mode='same')
+            if normalize:
+                p[i1, i2] = p[i1, i2] / p[i1, i2].mean()
 
     return 0, output_data, p
 

@@ -34,7 +34,7 @@ class my_mne_wrapper:
 
 
         if chanel_groups is None:
-            self.mne = mne.io.read_raw_edf(fname, preload=True)
+            self.mne = mne.io.read_raw_edf(fname, preload=True, verbose=False)
         else:
             self.monopolar_chanel_gruops = dict()
             for r in chanel_groups:
@@ -76,10 +76,10 @@ class my_mne_wrapper:
 
         if powerline is not None:
             frequencies = np.arange(start=powerline, stop=self.mne.info['sfreq'] / 2, step=powerline)
-            self.mne.notch_filter(freqs=frequencies, filter_length='auto', notch_widths=1, trans_bandwidth=0.3, method='fir', phase='zero')
+            self.mne.notch_filter(freqs=frequencies, filter_length='auto', notch_widths=1, trans_bandwidth=0.3, method='fir', phase='zero', verbose=False)
 
         if passband is not None:
-            self.mne.filter(l_freq=min(passband), h_freq=max(passband), phase='zero')
+            self.mne.filter(l_freq=min(passband), h_freq=max(passband), phase='zero', verbose=False)
 
 
 
