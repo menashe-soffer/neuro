@@ -1,3 +1,5 @@
+import copy
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -98,9 +100,36 @@ class event_reader:
         event_list = []
         for list_id in lists:
             for event in lists[list_id]['events']:
+                event['end sample'] = event['onset sample'] + int(500 * event['duration'])
                 event_list.append(event)
 
         return event_list
+
+    def get_list_events(self):
+
+        words = self.get_word_events()
+        list_dict = dict()
+        for w in words:
+            list = w['list']
+            if not (list in list_dict):
+                list_dict[list] = copy.deepcopy(w)
+                del list_dict[list]['recall']
+                del list_dict[list]['serial']
+                del list_dict[list]['word']
+                list_dict[list]['end sample'] = list_dict[list]['onset sample'] + list_dict[list]['duration'] * 500
+            else:
+                new_onset = w['onset']
+                if new_onset < list_dict[list]['onset']:
+                    list_dict[list]['duration'] += (list_dict[list]['onset'] - new_onset)
+                    list_dict[list]['onset'] = new_onset
+                    list_dict[list]['onset sample'] = w['onset sample']
+                else:
+                    new_duration = new_onset + w['duration'] - list_dict[list]['onset']
+                    list_dict[list]['duration'] = max(list_dict[list]['duration'], new_duration)
+                    list_dict[list]['end sample'] = w['end sample']#list_dict[list]['onset sample'] + list_dict[list]['duration'] * 500
+
+        return [list_dict[key] for key in list_dict]
+
 
 
     def make_timelines(self):

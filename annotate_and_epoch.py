@@ -71,10 +71,10 @@ def fit_gaussian(bins, h, init_m, init_sigma):
     return m, sigma, alpha
 
 
-def generate_epoched_version(path, create_new=True):
+def generate_epoched_version(path, create_new=True, event_name='cntdwn'):
 
-    epoched_fname = path['signals'].replace(base_folder, 'E:/epoched').replace('ieeg', 'cntdwn', 1).replace('.edf', '-epo.fif')
-    if os.path.isfile(epoched_fname):
+    epoched_fname = path['signals'].replace(base_folder, 'E:/epoched').replace('ieeg', event_name, 1).replace('.edf', '-epo.fif')
+    if os.path.isfile(epoched_fname) and (not create_new):
         print(epoched_fname, 'ALREADY EXISTS')
         return
 
@@ -233,16 +233,37 @@ def generate_epoched_version(path, create_new=True):
         # Epoch
         # add the annotations
         event_obj = event_reader(fname=path['events'])
-        countdown_events = event_obj.get_countdowns()
+        event_obj.align_to_sampling_rate(old_sfreq=mne_wrapper.original_sfreq, new_sfreq=mne_wrapper.get_mne().info['sfreq'])
+
+        if event_name == 'cntdwn':
+            epoching_events = event_obj.get_countdowns()
+            description = 'CNTDWN'
+            event_type = 1
+            sub_events = None
+        # if event_name == 'orient':
+        #     epoching_events = event_obj.get_orients()
+        #     description = 'ORIENT'
+        #     event_type = 2
+        if event_name == 'list':
+            epoching_events = event_obj.get_list_events()
+            description = 'LIST'
+            event_type = 4
+            sub_events = event_obj.get_word_events()
+            sub_description = 'WORD'
+            sub_type = 3
+
         #onset = np.array([e['onset'] for e in countdown_events])
-        onset = np.array([e['onset sample'] / fs for e in countdown_events])
-        duration = np.array([(e['end sample'] - e['onset sample']) / fs for e in countdown_events])
-        description = 'CNTDWN'
+        onset = np.array([e['onset sample'] / fs for e in epoching_events])
+        duration = np.array([(e['end sample'] - e['onset sample']) / fs for e in epoching_events])
         mne_copy.annotations.append(onset, duration, description)
-        onset_sample = np.array([e['onset sample'] for e in countdown_events])
+        if sub_events:
+            sub_onset = np.array([e['onset sample'] / fs for e in sub_events])
+            sub_duration = np.array([(e['end sample'] - e['onset sample']) / fs for e in sub_events])
+            mne_copy.annotations.append(sub_onset, sub_duration, sub_description)
+        onset_sample = np.array([e['onset sample'] for e in epoching_events])
         events_for_epoching = np.zeros((onset_sample.size, 3), dtype=int)
         events_for_epoching[:, 0] = onset_sample
-        events_for_epoching[:, 2] = 1
+        events_for_epoching[:, 2] = event_type
         # crop_start = onset - 2
         # crop_end = onset + duration + 2
 
@@ -257,8 +278,7 @@ def generate_epoched_version(path, create_new=True):
         SHOW = False
         if SHOW:
             epoched1 = mne.read_epochs(epoched_fname)
-            plt.subplots(1, 1)
-            epoched1.plot(scalings=2e-4)
+            _ = epoched1.plot(scalings=2e-4)
             plt.show()
 
 
@@ -269,7 +289,7 @@ for subject in tqdm(subject_list):
     paths = path_utils.get_paths(base_folder, subject=subject, mode='bipolar')
     for path in paths:
         try:
-            generate_epoched_version(path, create_new=False)
+            generate_epoched_version(path, create_new=True, event_name='cntdwn')
         except:
             fail_list.append(path['signals'])
             print('FAILED TO GENERATE .fif FROM', path['signals'])

@@ -106,6 +106,17 @@ def apply_gamma_responces(epoched, epoch_mask=None, gamma_band=[60, 160], keep_r
 
 
 
+def normalize_all_epochs(epoched, baseline_boundaries=(-0.5, -0.05)):
+
+    mask = (epoched.times > baseline_boundaries[0]) * (epoched.times < baseline_boundaries[-1])
+    num_epochs, num_chans, num_epoch_samps = epoched._data.shape
+    for i_epoch in range(num_epochs):
+        for i_chan in range(num_chans):
+            nf = np.norm(epoched._data[i_epoch, i_chan] * mask) / mask.sum()
+            epoched._data[i_epoch, i_chan] /= nf
+
+    return
+
 if __name__ == '__main__':
 
     list = find_epoched_subject(base_folder=base_folder, epoched_folder=epoched_folder)
@@ -150,8 +161,13 @@ if __name__ == '__main__':
             #     ax.flatten()[i_ax].grid(True)
             # plt.show()
             #
+            p_values = np.zeros(len(evoked.ch_names))
+            pre_mask = (evoked.times > -0.6) * (evoked.times < -0.1)
+            post_mask = (evoked.times > 0.1) * (evoked.times < 0.6)
             for i_ch in range(len(evoked.ch_names)):
                 evoked._data[i_ch] = np.log(np.convolve(np.ones(8)/8, evoked._data[i_ch], mode='same') + 1e-9)
+                _, p_values[i_ch] = scipy.stats.wilcoxon(evoked._data[i_ch][pre_mask], evoked._data[i_ch][post_mask])
+                p_values[i_ch] *= np.sign(evoked._data[i_ch][post_mask].mean() - evoked._data[i_ch][pre_mask].mean())
             for i_ch in range(len(evoked.ch_names)):
                 i_ax = i_ch % 20
                 if i_ax == 0:
@@ -163,6 +179,7 @@ if __name__ == '__main__':
                 [ax.flatten()[i_ax].plot([x, x], (-1, 1), c='r') for x in np.arange(10)]
                 ax.flatten()[i_ax].set_ylim((-0.5, 0.75))
                 ax.flatten()[i_ax].set_xlim((-0.8, 6))
+                ax.flatten()[i_ax].set_xlabel('p value : {:7.6f}'.format(p_values[i_ch]))
                 ax.flatten()[i_ax].grid(True)
             plt.show()
 
