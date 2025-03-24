@@ -139,7 +139,7 @@ def plot_signals_by_chan_and_band(signal1, signal2=None, avgsignal=None, plot_on
 
     for i_marker, marker in enumerate(markers):
         smps = marker + scope_smps
-        for i_chan in range(nchans):
+        for i_chan in range(min(nchans, 5)):
             ax[i_chan, 0].set_ylabel(chan_names[i_chan])
             for i_band in range(nbands):
                 if not plot_only_avg:
@@ -166,7 +166,7 @@ def plot_signals_by_chan_and_band(signal1, signal2=None, avgsignal=None, plot_on
         qspan = qmax - qmin
         smin = max(smin, qmin - 0.2 * qspan) - 0.02 * qspan
         smax = min(smax, qmax + 0.2 * qspan) + 0.02 * qspan
-        for i_chan in range(nchans):
+        for i_chan in range(min(nchans, 5)):
             ax[i_chan, 0].set_ylabel(chan_names[i_chan])
             if ovrd_ylim is None:
                 ax[i_chan, 0].set_ylim([smin, smax])
@@ -211,7 +211,9 @@ def calc_HFB(data, sub_centers=[70, 90, 110, 130, 150], subs_bw=20, fs=500, tsco
             # epoch_p = np.copy(p[:, :, smps[0] : smps[-1] + 1])
             epoch_x = x[:, :, smps[0] : smps[-1] + 1]
             epoch_p = p[:, :, smps[0] : smps[-1] + 1]
-            ave_p = epoch_p[:, :, norm_meas_mask].mean(axis=-1)
+            if epoch_p.shape[-1] != norm_meas_mask.size:
+                print('here')
+            ave_p = epoch_p[:, :, norm_meas_mask[:epoch_p.shape[-1]]].mean(axis=-1)
             for i_chan in range(ave_p.shape[0]):
                 for i_band in range(ave_p.shape[1]):
                     epoch_x[i_chan, i_band] /= np.sqrt(ave_p[i_chan, i_band])
