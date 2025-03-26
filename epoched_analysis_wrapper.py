@@ -9,7 +9,7 @@ import tqdm
 import mne
 
 from path_utils import get_paths
-from my_montage_reader import my_montage_reader
+#from my_montage_reader import my_montage_reader
 
 global base_folder
 base_folder = 'E:/ds004789-download'
@@ -187,84 +187,152 @@ def calculate_p_values(evoked, pre_intvl=[-0.5, -0.1], post_intval=[0.1, 0.6],
     return p_values, increase_mask, figs
 
 
+def add_synthetic_sub_annotations(epoched, event_type='CNTDWN', sub_event_type='DIGIT', num_subs_events=10, pitch=1):
+
+    idxs = np.argwhere([d == event_type for d in epoched.annotations.description]).flatten()
+    base_onsets = epoched.annotations.onset[idxs]
+    sub_onsets = []
+    for base_onset in base_onsets:
+        sub_onsets.append(base_onset + pitch * np.arange(num_subs_events))
+    sub_onsets = np.array(sub_onsets).flatten()
+    epoched.annotations.append(sub_onsets, pitch * np.ones(sub_onsets.shape), sub_event_type)
+
+    return
+
+
+def process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, proc_params_sub, SHOW, SHOW_ONLY):
+
+    epoched = mne.read_epochs(epoched_file, verbose=False)
+    # cmplx_signal = epoched.apply_hilbert().get_data()
+    annotations = epoched.get_annotations_per_epoch()
+    ch_names = epoched.ch_names
+    bad_channels = epoched.info['bads']
+    ch_mask = np.array([ch not in bad_channels for ch in ch_names])
+    epoch_mask = np.zeros(len(annotations), dtype=bool)
+    for i_epoch in range(len(annotations)):
+        annot_type = [a[2] for a in annotations[i_epoch]]
+        # print(annot_type)
+        is_cntdwn = np.any([a == event_type for a in annot_type])
+        is_bad = np.any([a.find('bad_') > -1 for a in annot_type])
+        epoch_mask[i_epoch] = (len(annot_type) > 0) and (is_cntdwn) and (not is_bad)
+
+    epoched_gamma = apply_gamma_responces(epoched=epoched, epoch_mask=epoch_mask)
+    #
+    # TEMPORARY PATCH: ADD SUB EVENTS
+    if sub_event_type == 'DIGIT':
+        add_synthetic_sub_annotations(epoched_gamma)
+        annotations = epoched_gamma.get_annotations_per_epoch()
+
+    evoked = epoched_gamma.average('data')
+    norm_mask = (evoked.times >= -0.5) * (evoked.times <= -0.05)
+    for i_chan in range(evoked._data.shape[0]):
+        nf = np.linalg.norm(evoked._data[i_chan][norm_mask]) / np.sqrt(norm_mask.sum())
+        evoked._data[i_chan] /= nf
+
+    # # relation between major and sub events
+    # idx_major = np.argwhere([e == event_type for e in epoched_gamma.annotations.description]).flatten()
+    # idx_sub = np.argwhere([e == sub_event_type for e in epoched_gamma.annotations.description]).flatten()
+    # onset_major = epoched_gamma.annotations.onset[idx_major]
+    # onset_sub = epoched_gamma.annotations.onset[idx_sub]
+    # relative_onsets = []
+    # for i_major, (onset, next_onset) in enumerate(zip(onset_major[:-1], onset_major[1:])):
+    #     relative_onsets.append(onset_sub[(onset_sub >= onset) * (onset_sub < next_onset)] - onset)
+
+    p_values, increase_mask, _ = calculate_p_values(evoked, pre_intvl=proc_params['pre_intvl'], post_intval=proc_params['post_intvl'],
+                                                    display_post_cursor=proc_params['display_post_cursor'], display_seperator_pitch=proc_params['display_seperator_pitch'],
+                                                    display_title=epoched_file, show=SHOW)
+    if not SHOW_ONLY:
+        evoked_file = epoched_file.replace('ieeg-epo', '-' + event_type + '-ieeg-evoked-ave')
+        evoked.save(evoked_file, overwrite=True)
+        with open(os.path.join(os.path.dirname(epoched_file), 'p_values_' + event_type), 'wb') as fd:
+            pickle.dump(dict({'ch_names': ch_names, 'p_values': p_values, 'increase_mask': increase_mask}), fd)
+    #
+    # sub event
+    mask = np.array([d == event_type for d in epoched.annotations.description]).flatten()
+    events_for_sub_epoching = np.zeros((mask.sum(), 3))
+    events_for_sub_epoching[:, 0] = epoched.annotations.onset[mask]
+    durations = epoched.annotations.duration[mask].max()
+
+    fs = epoched_gamma.info['sfreq']
+    epoched_data = epoched_gamma.get_data()
+    major_duration = (epoched_data.shape[-1] - 1) / fs
+    base_time = 0
+    time_shift = -epoched_gamma.times[0]
+    semi_raw = mne.io.RawArray(np.concatenate(epoched_data, axis=1), epoched.info, verbose=False)
+    for major_epoch in annotations:
+        sub_idxs = np.argwhere([e[-1] == sub_event_type for e in major_epoch]).flatten()
+        sub_events_inner = np.array([major_epoch[i][:2] for i in sub_idxs])
+        semi_raw.annotations.append(sub_events_inner[:, 0] + time_shift + base_time, sub_events_inner[:, 1], sub_event_type)
+        base_time += major_duration
+    events_for_epoching = np.zeros((len(semi_raw.annotations), 3), dtype=int)
+    events_for_epoching[:, 0] = (semi_raw.annotations.onset * fs).astype(int)
+    events_for_epoching[:, 2] = 0
+    # BIG TBD: KKEP BAD EVENTS, ASSIGN EVENT TYPES TO DISTINGUISH
+    sub_epoched = mne.Epochs(semi_raw, events=events_for_epoching, tmin=-1, tmax=sub_events_inner[:, 1].max() + 1,
+                             baseline=None, preload=True)
+    #normalize_all_epochs(sub_epoched)
+    sub_evoked = sub_epoched.average('data')
+    #
+    norm_mask = (sub_evoked.times >= -0.5) * (sub_evoked.times <= -0.05)
+    for i_chan in range(sub_evoked._data.shape[0]):
+        nf = np.linalg.norm(sub_evoked._data[i_chan][norm_mask]) / np.sqrt(norm_mask.sum())
+        sub_evoked._data[i_chan] /= nf
+    #
+
+    p_values, increase_mask, _ = calculate_p_values(sub_evoked, pre_intvl=proc_params_sub['pre_intvl'], post_intval=proc_params_sub['post_intvl'],
+                                                    display_post_cursor=proc_params_sub['display_post_cursor'], display_seperator_pitch=proc_params_sub['display_seperator_pitch'],
+                                                    display_title=epoched_file, show=SHOW)
+
+    if not SHOW_ONLY:
+        evoked_file = epoched_file.replace('ieeg-epo', '-' + sub_event_type + '-ieeg-evoked-ave')
+        evoked.save(evoked_file, overwrite=True)
+        with open(os.path.join(os.path.dirname(epoched_file), 'p_values_' + sub_event_type), 'wb') as fd:
+            pickle.dump(dict({'ch_names': ch_names, 'p_values': p_values, 'increase_mask': increase_mask}), fd)
+
+    if SHOW:
+        plt.show()
+
+
+def get_params_for_event_type(type_to_process):
+
+    if TYPE_TO_PROCESS == 'cntdwn':
+        file_type, event_type, sub_event_type = 'cntdwn', 'CNTDWN', 'DIGIT'
+        proc_params = dict({'pre_intvl': [-0.5, -0.1], 'post_intvl': [0.1, 0.6], 'display_post_cursor': 8, 'display_seperator_pitch': 1})
+        proc_params_sub = dict({'pre_intvl': [-0.4, -0.1], 'post_intvl': [0.1, 0.4], 'display_post_cursor': 3, 'display_seperator_pitch': 2.6})
+    if TYPE_TO_PROCESS == 'list':
+        file_type, event_type, sub_event_type = 'list', 'LIST', 'WORD'#
+        proc_params = dict({'pre_intvl': [-0.5, -0.1], 'post_intvl': [0.1, 0.6], 'display_post_cursor': 30, 'display_seperator_pitch': 2.6})
+        proc_params_sub = dict({'pre_intvl': [-0.4, -0.1], 'post_intvl': [0.1, 0.4], 'display_post_cursor': 3, 'display_seperator_pitch': 2.6})
+    if TYPE_TO_PROCESS == 'orient':
+        assert 'orient not implemented yet'
+
+    return file_type, event_type, sub_event_type, proc_params, proc_params_sub
+
 
 
 
 if __name__ == '__main__':
 
-    SHOW = False
-    file_type, event_type, sub_event_type = 'list', 'LIST', 'WORD'# 'cntdwn', 'CNTDWN'#
+    import time
+
+    SHOW, SHOW_ONLY = False, False
+    assert SHOW or (not SHOW_ONLY)
+    TYPE_TO_PROCESS = 'cntdwn'# 'list'# 'orient'#
+    file_type, event_type, sub_event_type, proc_params, proc_params_sub = get_params_for_event_type(TYPE_TO_PROCESS)
+
     list = find_epoched_subject(base_folder=base_folder, epoched_folder=epoched_folder, type=file_type)
     #print(list)
+    fail_list = []
+    tstart = time.time()
     for subject_item in tqdm.tqdm(list):
         for epoched_file in subject_item['epoched']:
-            epoched = mne.read_epochs(epoched_file, verbose=False)
-            #cmplx_signal = epoched.apply_hilbert().get_data()
-            annotations = epoched.get_annotations_per_epoch()
-            ch_names = epoched.ch_names
-            bad_channels = epoched.info['bads']
-            ch_mask = np.array([ch not in bad_channels for ch in ch_names])
-            epoch_mask = np.zeros(len(annotations), dtype=bool)
-            for i_epoch in range(len(annotations)):
-                annot_type = [a[2] for a in annotations[i_epoch]]
-                #print(annot_type)
-                is_cntdwn = np.any([a == event_type for a in annot_type])
-                is_bad = np.any([a.find('bad_') > -1 for a in annot_type])
-                epoch_mask[i_epoch] = (len(annot_type) > 0) and (is_cntdwn) and (not is_bad)
+            try:
+                process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, proc_params_sub, SHOW, SHOW_ONLY)
+            except:
+                fail_list.append(epoched_file)
 
-            epoched_gamma = apply_gamma_responces(epoched=epoched, epoch_mask=epoch_mask)
+    elapsed = time.time() - tstart
 
-            evoked = epoched_gamma.average('data')
-            norm_mask = (evoked.times >= -0.5) * (evoked.times <= -0.05)
-            for i_chan in range(evoked._data.shape[0]):
-                nf = np.linalg.norm(evoked._data[i_chan][norm_mask]) / np.sqrt(norm_mask.sum())
-                evoked._data[i_chan] /= nf
-
-
-            p_values, increase_mask, _ = calculate_p_values(evoked, pre_intvl=[-0.5, -0.1], post_intval=[0.1, 0.6],
-                                                            display_post_cursor=10, display_seperator_pitch=2.6, display_title=epoched_file, show=SHOW)
-            with open (os.path.join(os.path.dirname(epoched_file), 'p_values_' + event_type), 'wb') as fd:
-                pickle.dump(dict({'ch_names': ch_names, 'p_values': p_values, 'increase_mask': increase_mask}), fd)
-            #
-            # sub event
-            mask = np.array([d == event_type for d in epoched.annotations.description]).flatten()
-            events_for_sub_epoching = np.zeros((mask.sum(), 3))
-            events_for_sub_epoching[:, 0] = epoched.annotations.onset[mask]
-            durations = epoched.annotations.duration[mask].max()
-
-            fs = epoched_gamma.info['sfreq']
-            epoched_data = epoched_gamma.get_data()
-            major_duration = (epoched_data.shape[-1] - 1) / fs
-            base_time = 0
-            time_shift = -epoched_gamma.times[0]
-            semi_raw = mne.io.RawArray(np.concatenate(epoched_data, axis=1), epoched.info, verbose=False)
-            for major_epoch in annotations:
-                mask = [e[-1] == event_type for e in major_epoch]
-                major_idx = np.argwhere([e[-1] == event_type for e in major_epoch]).squeeze()
-                sub_idxs = np.argwhere([e[-1] == sub_event_type for e in major_epoch]).flatten()
-                sub_events_inner = np.array([major_epoch[i][:2] for i in sub_idxs])
-                semi_raw.annotations.append(sub_events_inner[:, 0] + time_shift + base_time, sub_events_inner[:, 1], sub_event_type)
-                base_time += major_duration
-            events_for_epoching = np.zeros((len(semi_raw.annotations), 3), dtype=int)
-            events_for_epoching[:, 0] = (semi_raw.annotations.onset * fs).astype(int)
-            events_for_epoching[:, 2] = 0
-            # BIG TBD: KKEP BAD EVENTS, ASSIGN EVENT TYPES TO DISTINGUISH
-            sub_epoched = mne.Epochs(semi_raw, events=events_for_epoching, tmin=-1, tmax=sub_events_inner[:, 1].max() + 1, baseline=None, preload=True)
-            normalize_all_epochs(sub_epoched)
-            sub_evoked = sub_epoched.average('data')
-            #
-            norm_mask = (sub_evoked.times >= -0.5) * (sub_evoked.times <= -0.05)
-            for i_chan in range(sub_evoked._data.shape[0]):
-                nf = np.linalg.norm(sub_evoked._data[i_chan][norm_mask]) / np.sqrt(norm_mask.sum())
-                sub_evoked._data[i_chan] /= nf
-            #
-
-            p_values, increase_mask, _ = calculate_p_values(sub_evoked, pre_intvl=[-0.4, -0.1], post_intval=[0.1, 0.4],
-                                                            display_post_cursor=3, display_seperator_pitch=2.6, display_title=epoched_file, show=SHOW)
-            with open (os.path.join(os.path.dirname(epoched_file), 'p_values_' + sub_event_type), 'wb') as fd:
-                pickle.dump(dict({'ch_names': ch_names, 'p_values': p_values, 'increase_mask': increase_mask}), fd)
-
-            if SHOW:
-                plt.show()
-
+    print('FAILED:', fail_list)
+    print('total processing time: {:6.2f} minutes'.format(elapsed / 60))
 
