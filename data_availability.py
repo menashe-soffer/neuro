@@ -1,4 +1,5 @@
 import copy
+import glob
 import os
 
 import mne
@@ -167,111 +168,201 @@ def make_availity_list_by_rules(data, region_list, min_sessions=3, countdown_ran
     return output
 
 
-READ_FILES = False
+class data_availability:
 
-base_folder = 'E:/ds004789-download'
+    base_folder = 'E:/ds004789-download'
+    processed_folder = 'E:/epoched'
 
-start_times = pd.read_csv(os.path.join(base_folder, 'start_times.csv'))
+    def __init__(self, base_folder='E:/ds004789-download', fixed_data_filename='fixed_availability_data'):
 
-# area of interest definition
-all_regions = ['bankssts', 'caudalanteriorcingulate', 'caudalmiddlefrontal', 'cuneus', 'entorhinal', 'frontalpole', 'fusiform',
-               'inferiorparietal', 'inferiortemporal', 'insula', 'isthmuscingulate', 'lateraloccipital', 'lateralorbitofrontal',
-               'lingual', 'medialorbitofrontal', 'middletemporal', 'nan', 'paracentral', 'parahippocampal', 'parsopercularis',
-               'parsorbitalis', 'parstriangularis', 'pericalcarine', 'postcentral', 'posteriorcingulate', 'precentral', 'precuneus',
-               'rostralanteriorcingulate', 'rostralmiddlefrontal', 'superiorfrontal', 'superiorparietal', 'superiortemporal',
-               'supramarginal', 'temporalpole', 'transversetemporal']
-all_regions_hemisphere_sel = ['LR' for region in all_regions]
-# create table of available data
-if READ_FILES:
-    subjects_list = get_subject_list(base_folder=base_folder)
-    raw_availability_data = make_data_availability_list(base_folder=base_folder, region_list=all_regions, hemisphere_sel=all_regions_hemisphere_sel)
-    with open(os.path.join(base_folder, 'raw_availability_data'), 'wb') as fd:
-        pickle.dump(raw_availability_data, fd)
-    #assert False
-
-# process the files
-with open(os.path.join(base_folder, 'raw_availability_data'), 'rb') as fd:
-    raw_availability_data = pickle.load(fd)
-availability_data = process_raw_data(raw_availability_data, ovrd_times=start_times)
+        with open(os.path.join(base_folder, fixed_data_filename), 'rb') as fd:
+            self.data = pickle.load(fd)
 
 
-region_list = ['fusiform-R', 'inferiortemporal-R', 'lateraloccipital-R', 'lingual-R', 'fusiform-L', 'inferiortemporal-L', 'lateraloccipital-L', 'lingual-L']
-#hemisphere_sel = ['LR', 'LR', 'LR', 'both']
-admit_list = make_availity_list_by_rules(availability_data, region_list, min_sessions=3, countdown_range=[26, 26], )
-print(admit_list.keys())
+    def get_contacts_for_2_session_gap(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None):
+
+        # first make flattened session list
+        suitable_session_pairs = []
+        for subject in self.data:
+            subject_data = self.data[subject]
+            keys = list(subject_data['sessions'].keys())
+            num_sessions = len(keys)
+            timegap_matrix_hrs = np.zeros((num_sessions, num_sessions))
+            session_dates =  [subject_data['sessions'][sess]['date'] for sess in keys]
+            for i1 in range(num_sessions-1):
+                for i2 in range(i1+1, num_sessions):
+                    try:
+                        timegap_matrix_hrs[i1, i2] = (session_dates[i2] - session_dates[i1]).total_seconds() / 3600
+                    except:
+                        print('fail', subject, keys[i1], keys[i2], session_dates[i2], session_dates[i1])
+            #
+            suitability_mat = (timegap_matrix_hrs > min_timegap_hrs) * (timegap_matrix_hrs < max_timegap_hrs)
+            for i1 in range(num_sessions-1):
+                for i2 in range(i1+1, num_sessions):
+                    if suitability_mat[i1, i2]:
+                        pair = {'subject': subject, 'first': keys[i1], 'second': keys[i2],
+                                'delta_hrs': timegap_matrix_hrs[i1, i2], 'contacts': subject_data['bipolar_names']}
+                        suitable_session_pairs.append(pair)
+                        suitability_mat[i1, :], suitability_mat[:, i1], suitability_mat[i2, :], suitability_mat[:, i2] = False, False, False, False
+
+        # intersect with available evoked files
+        if event_type is not None:
+
+            pattern = os.path.join(self.processed_folder, 'sub-R*', 'ses-*', event_type, '*' + sub_event_type + '-ieeg-evoked-ave.fif')
+            evoked_list = glob.glob(pattern)
+            revised_pair_list = []
+            for pair in suitable_session_pairs:
+                subject, first, second = pair['subject'], pair['first'], pair['second']
+                # look for the files
+                evoked_1, evoked_2 = None, None
+                for fname in evoked_list:
+                    if (fname.find(subject) > -1):
+                        evoked_1 = fname if fname.find(first) > -1 else evoked_1
+                        evoked_2 = fname if fname.find(second) > -1 else evoked_2
+                if (evoked_1 is not None) and (evoked_2 is not None):
+                    pair['first'] = evoked_1
+                    pair['second'] = evoked_2
+                    revised_pair_list.append(pair)
+            suitable_session_pairs = revised_pair_list
 
 
-# # temporary statistics
-# gap_after_countdown, countdown_to_word = [], []
-# next_list, second_next_list = [], []
-# for subject in list(admit_list.keys()):
-#
-#     subject_data = admit_list[subject]
-#     admit_sessions = list(subject_data['sessions'].keys())
-#     paths = get_paths(base_folder=base_folder, subject=subject, mode='bipolar', sess_slct=[int(a[-1]) for a in admit_sessions])
-#     for path in paths:
-#         event_filename = path['events']
-#         session_name = event_filename[event_filename.find('ses-'):][:5]
-#
-#         event_reader_obj = event_reader(path['events'])
-#         event_types = event_reader_obj.df.trial_type.values
-#         times = event_reader_obj.df.onset.values
-#         #
-#         idxs = np.argwhere(event_types == 'COUNTDOWN_END').squeeze()
-#         gap_after_countdown = gap_after_countdown + list(times[idxs+1] - times[idxs])
-#         for idx in idxs:
-#             #print(idx)
-#             next_word_idx = idx + 1 + np.argwhere(event_types[idx + 1:] == 'WORD').squeeze()
-#             next_practice_word_idx = idx + 1 + np.argwhere(event_types[idx + 1:] == 'PRACTICE_WORD').squeeze()
-#             next_word_idx = (np.concatenate((next_word_idx, next_practice_word_idx))).min()
-#             countdown_to_word.append(times[next_word_idx] - times[idx])
-#             next_list.append(event_types[idx + 1] + ', ' + event_types[idx+2])
-#             #second_next_list.append(event_types[idx + 2])
-#         print(subject, session_name, len(gap_after_countdown), len(countdown_to_word))
-#
-# next_pair_types = np.unique(next_list)
-# for next_event_pair in next_pair_types:
-#     print(next_event_pair, '   ({})'.format(np.sum([next_event_pair == e for e in next_list])))
-#
-# fig, ax = plt.subplots(1, 2, figsize=(8, 4))
-# h, bins = np.histogram(countdown_to_word, bins=100)
-# bins = (bins[:-1] + bins[1:]) / 2
-# ax[0].bar(bins, h, width=0.1)
-# h, bins = np.histogram(gap_after_countdown, bins=100)
-# bins = (bins[:-1] + bins[1:]) / 2
-# ax[1].bar(bins, h, width=0.1)
-# plt.show()
+        # flatten
+        suitable_contacts = []
+        for pair in suitable_session_pairs:
+            for contact in pair['contacts']:
+                contact_data = {'subject': pair['subject'], 'name': contact, 'first': pair['first'], 'second': pair['second'], 'delta_hrs': pair['delta_hrs']}
+                suitable_contacts.append(contact_data)
+
+        return suitable_session_pairs, suitable_contacts
 
 
-# # word repeat statistics
-# word_per_subject_list = dict()
-# for subject in list(admit_list.keys()):
-#     subject_data = admit_list[subject]
-#     admit_sessions = list(subject_data['sessions'].keys())
-#     paths = get_paths(base_folder=base_folder, subject=subject, mode='bipolar',
-#                       sess_slct=[int(a[-1]) for a in admit_sessions])
-#     words_list = []
-#     for path in paths:
-#         print(path['events'])
-#         event_reader_obj = event_reader(path['events'])
-#         event_types = event_reader_obj.df.trial_type.values
-#         event_names = event_reader_obj.df.item_name
-#         words = event_names[event_types == 'WORD'].values
-#         words_list.append(words)
-#     subject_words = set(words_list[0]).intersection(set(words_list[1])).intersection(set(words_list[2]))
-#     word_per_subject_list[subject] = copy.deepcopy(subject_words)
-#
-# n_subjects = len(admit_list)
-# admit_subjects = list(admit_list)
-# hit_mat = np.zeros((n_subjects, n_subjects))
-# for i_sub1 in range(n_subjects - 1):
-#     list1 = word_per_subject_list[admit_subjects[i_sub1]]
-#     if i_sub1 == 0:
-#         common_list = copy.deepcopy(list1)
-#     else:
-#         if i_sub1 != 3:
-#             common_list = common_list.intersection(list1)
-#     for i_sub2 in range(i_sub1, n_subjects):
-#         list2 = word_per_subject_list[admit_subjects[i_sub2]]
-#         hit_mat[i_sub1, i_sub2] = len(list1.intersection(list2))
-# print('here')
+    # def get_avail_evoked_ave_files(self, major_event, sub_event):
+    #
+    #     pattern = os.path.join(self.processed_folder, 'sub-R*', 'ses-*', major_event, '*' + sub_event + '-ieeg-evoked-ave.fif')
+    #
+    #     return glob.glob(pattern)
+
+
+
+
+
+
+
+if __name__ == '__main__':
+
+    # data_availability_obj = data_availability()
+    # _, suitable_contacts = data_availability_obj.get_contacts_for_2_session_gap(min_timegap_hrs=72, max_timegap_hrs=96)
+    # print(len(suitable_contacts))
+
+    READ_FILES = False
+
+    base_folder = 'E:/ds004789-download'
+
+    start_times = pd.read_csv(os.path.join(base_folder, 'start_times.csv'))
+
+    # area of interest definition
+    all_regions = ['bankssts', 'caudalanteriorcingulate', 'caudalmiddlefrontal', 'cuneus', 'entorhinal', 'frontalpole', 'fusiform',
+                   'inferiorparietal', 'inferiortemporal', 'insula', 'isthmuscingulate', 'lateraloccipital', 'lateralorbitofrontal',
+                   'lingual', 'medialorbitofrontal', 'middletemporal', 'nan', 'paracentral', 'parahippocampal', 'parsopercularis',
+                   'parsorbitalis', 'parstriangularis', 'pericalcarine', 'postcentral', 'posteriorcingulate', 'precentral', 'precuneus',
+                   'rostralanteriorcingulate', 'rostralmiddlefrontal', 'superiorfrontal', 'superiorparietal', 'superiortemporal',
+                   'supramarginal', 'temporalpole', 'transversetemporal']
+    all_regions_hemisphere_sel = ['LR' for region in all_regions]
+    # create table of available data
+    if READ_FILES:
+        subjects_list = get_subject_list(base_folder=base_folder)
+        raw_availability_data = make_data_availability_list(base_folder=base_folder, region_list=all_regions, hemisphere_sel=all_regions_hemisphere_sel)
+        with open(os.path.join(base_folder, 'raw_availability_data'), 'wb') as fd:
+            pickle.dump(raw_availability_data, fd)
+        #assert False
+
+    # process the files
+    with open(os.path.join(base_folder, 'raw_availability_data'), 'rb') as fd:
+        raw_availability_data = pickle.load(fd)
+    availability_data = process_raw_data(raw_availability_data, ovrd_times=start_times)
+
+    #
+    with open(os.path.join(base_folder, 'fixed_availability_data'), 'wb') as fd:
+        pickle.dump(availability_data, fd)
+    #
+
+    region_list = ['fusiform-R', 'inferiortemporal-R', 'lateraloccipital-R', 'lingual-R', 'fusiform-L', 'inferiortemporal-L', 'lateraloccipital-L', 'lingual-L']
+    #hemisphere_sel = ['LR', 'LR', 'LR', 'both']
+    admit_list = make_availity_list_by_rules(availability_data, region_list, min_sessions=3, countdown_range=[26, 26], )
+    print(admit_list.keys())
+
+
+    # # temporary statistics
+    # gap_after_countdown, countdown_to_word = [], []
+    # next_list, second_next_list = [], []
+    # for subject in list(admit_list.keys()):
+    #
+    #     subject_data = admit_list[subject]
+    #     admit_sessions = list(subject_data['sessions'].keys())
+    #     paths = get_paths(base_folder=base_folder, subject=subject, mode='bipolar', sess_slct=[int(a[-1]) for a in admit_sessions])
+    #     for path in paths:
+    #         event_filename = path['events']
+    #         session_name = event_filename[event_filename.find('ses-'):][:5]
+    #
+    #         event_reader_obj = event_reader(path['events'])
+    #         event_types = event_reader_obj.df.trial_type.values
+    #         times = event_reader_obj.df.onset.values
+    #         #
+    #         idxs = np.argwhere(event_types == 'COUNTDOWN_END').squeeze()
+    #         gap_after_countdown = gap_after_countdown + list(times[idxs+1] - times[idxs])
+    #         for idx in idxs:
+    #             #print(idx)
+    #             next_word_idx = idx + 1 + np.argwhere(event_types[idx + 1:] == 'WORD').squeeze()
+    #             next_practice_word_idx = idx + 1 + np.argwhere(event_types[idx + 1:] == 'PRACTICE_WORD').squeeze()
+    #             next_word_idx = (np.concatenate((next_word_idx, next_practice_word_idx))).min()
+    #             countdown_to_word.append(times[next_word_idx] - times[idx])
+    #             next_list.append(event_types[idx + 1] + ', ' + event_types[idx+2])
+    #             #second_next_list.append(event_types[idx + 2])
+    #         print(subject, session_name, len(gap_after_countdown), len(countdown_to_word))
+    #
+    # next_pair_types = np.unique(next_list)
+    # for next_event_pair in next_pair_types:
+    #     print(next_event_pair, '   ({})'.format(np.sum([next_event_pair == e for e in next_list])))
+    #
+    # fig, ax = plt.subplots(1, 2, figsize=(8, 4))
+    # h, bins = np.histogram(countdown_to_word, bins=100)
+    # bins = (bins[:-1] + bins[1:]) / 2
+    # ax[0].bar(bins, h, width=0.1)
+    # h, bins = np.histogram(gap_after_countdown, bins=100)
+    # bins = (bins[:-1] + bins[1:]) / 2
+    # ax[1].bar(bins, h, width=0.1)
+    # plt.show()
+
+
+    # # word repeat statistics
+    # word_per_subject_list = dict()
+    # for subject in list(admit_list.keys()):
+    #     subject_data = admit_list[subject]
+    #     admit_sessions = list(subject_data['sessions'].keys())
+    #     paths = get_paths(base_folder=base_folder, subject=subject, mode='bipolar',
+    #                       sess_slct=[int(a[-1]) for a in admit_sessions])
+    #     words_list = []
+    #     for path in paths:
+    #         print(path['events'])
+    #         event_reader_obj = event_reader(path['events'])
+    #         event_types = event_reader_obj.df.trial_type.values
+    #         event_names = event_reader_obj.df.item_name
+    #         words = event_names[event_types == 'WORD'].values
+    #         words_list.append(words)
+    #     subject_words = set(words_list[0]).intersection(set(words_list[1])).intersection(set(words_list[2]))
+    #     word_per_subject_list[subject] = copy.deepcopy(subject_words)
+    #
+    # n_subjects = len(admit_list)
+    # admit_subjects = list(admit_list)
+    # hit_mat = np.zeros((n_subjects, n_subjects))
+    # for i_sub1 in range(n_subjects - 1):
+    #     list1 = word_per_subject_list[admit_subjects[i_sub1]]
+    #     if i_sub1 == 0:
+    #         common_list = copy.deepcopy(list1)
+    #     else:
+    #         if i_sub1 != 3:
+    #             common_list = common_list.intersection(list1)
+    #     for i_sub2 in range(i_sub1, n_subjects):
+    #         list2 = word_per_subject_list[admit_subjects[i_sub2]]
+    #         hit_mat[i_sub1, i_sub2] = len(list1.intersection(list2))
+    # print('here')
