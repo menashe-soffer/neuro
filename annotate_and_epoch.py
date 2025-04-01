@@ -289,7 +289,7 @@ for subject in tqdm(subject_list):
     paths = path_utils.get_paths(base_folder, subject=subject, mode='bipolar')
     for path in paths:
         try:
-            generate_epoched_version(path, create_new=True, event_name='cntdwn')
+            generate_epoched_version(path, create_new=False, event_name='cntdwn')
         except:
             fail_list.append(path['signals'])
             print('FAILED TO GENERATE .fif FROM', path['signals'])
