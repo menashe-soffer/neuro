@@ -227,7 +227,7 @@ def process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, 
     norm_mask = (evoked.times >= -0.5) * (evoked.times <= -0.05)
     for i_chan in range(evoked._data.shape[0]):
         nf = np.linalg.norm(evoked._data[i_chan][norm_mask]) / np.sqrt(norm_mask.sum())
-        evoked._data[i_chan] /= nf
+        evoked._data[i_chan] /= (nf + 1e-64)
 
     # # relation between major and sub events
     # idx_major = np.argwhere([e == event_type for e in epoched_gamma.annotations.description]).flatten()
@@ -238,7 +238,7 @@ def process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, 
     # for i_major, (onset, next_onset) in enumerate(zip(onset_major[:-1], onset_major[1:])):
     #     relative_onsets.append(onset_sub[(onset_sub >= onset) * (onset_sub < next_onset)] - onset)
 
-    p_values, increase_mask, _ = calculate_p_values(evoked, pre_intvl=proc_params['pre_intvl'], post_intval=proc_params['post_intvl'],
+    p_values, increase_mask, _ = calculate_p_values(evoked.copy(), pre_intvl=proc_params['pre_intvl'], post_intval=proc_params['post_intvl'],
                                                     display_post_cursor=proc_params['display_post_cursor'], display_seperator_pitch=proc_params['display_seperator_pitch'],
                                                     display_title=epoched_file, show=SHOW)
     if not SHOW_ONLY:
@@ -276,10 +276,10 @@ def process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, 
     norm_mask = (sub_evoked.times >= -0.5) * (sub_evoked.times <= -0.05)
     for i_chan in range(sub_evoked._data.shape[0]):
         nf = np.linalg.norm(sub_evoked._data[i_chan][norm_mask]) / np.sqrt(norm_mask.sum())
-        sub_evoked._data[i_chan] /= nf
+        sub_evoked._data[i_chan] /= (nf + 1e-64)
     #
 
-    p_values, increase_mask, _ = calculate_p_values(sub_evoked, pre_intvl=proc_params_sub['pre_intvl'], post_intval=proc_params_sub['post_intvl'],
+    p_values, increase_mask, _ = calculate_p_values(sub_evoked.copy(), pre_intvl=proc_params_sub['pre_intvl'], post_intval=proc_params_sub['post_intvl'],
                                                     display_post_cursor=proc_params_sub['display_post_cursor'], display_seperator_pitch=proc_params_sub['display_seperator_pitch'],
                                                     display_title=epoched_file, show=SHOW)
 

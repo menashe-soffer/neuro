@@ -237,9 +237,20 @@ def generate_epoched_version(path, create_new=True, event_name='cntdwn'):
 
         if event_name == 'cntdwn':
             epoching_events = event_obj.get_countdowns()
+            #
+            # RANDOM
+            rand_samps = np.sort(np.random.uniform(low=1000, high=mne_copy.times.size-20000, size=len(epoching_events))).astype(int)
+            rand_onset = mne_copy.times[rand_samps]
+            for i_event, event in enumerate(epoching_events):
+                event['onset'] = rand_onset[i_event]
+                event['onset sample'] = rand_samps[i_event]
+                event['end sample'] = rand_samps[i_event] + 5250
+            #
             description = 'CNTDWN'
             event_type = 1
             sub_events = None
+            tmin, tmax = -2.5, 10.5 + 2.5
+            sub_type = 2
         # if event_name == 'orient':
         #     epoching_events = event_obj.get_orients()
         #     description = 'ORIENT'
@@ -251,6 +262,15 @@ def generate_epoched_version(path, create_new=True, event_name='cntdwn'):
             sub_events = event_obj.get_word_events()
             sub_description = 'WORD'
             sub_type = 3
+            tmin, tmax = -2.5, 30.5 + 2.5
+            # # TEMPORARY CODE TO GENERATE RANDOMIZATION
+            # description, event_type = 'CNTDWN', 1
+            # tmin, tmax = -2.5, 10.5 + 2.5
+            # for ee in epoching_events:
+            #     shift = np.random.uniform(low=2, high=16)
+            #     ee['onset'] += shift
+            #     ee['onset sample'] += int(shift * fs)
+
 
         #onset = np.array([e['onset'] for e in countdown_events])
         onset = np.array([e['onset sample'] / fs for e in epoching_events])
@@ -263,13 +283,13 @@ def generate_epoched_version(path, create_new=True, event_name='cntdwn'):
         onset_sample = np.array([e['onset sample'] for e in epoching_events])
         events_for_epoching = np.zeros((onset_sample.size, 3), dtype=int)
         events_for_epoching[:, 0] = onset_sample
-        events_for_epoching[:, 2] = event_type
+        events_for_epoching[:, 2] = sub_type
         # crop_start = onset - 2
         # crop_end = onset + duration + 2
 
         # save
         #mne_copy._data[2] = 1e-6 * (np.arange(mne_copy._data.shape[-1]) % 1000 - 500)
-        epoched = mne.Epochs(mne_copy, events=events_for_epoching, tmin=-2.5, tmax=10.5 + 2.5,
+        epoched = mne.Epochs(mne_copy, events=events_for_epoching, tmin=tmin, tmax=tmax,
                              reject_by_annotation=False)
         #epoched.ch_amps = mne_copy.get_data().std(axis=1)
         os.makedirs(os.path.dirname(epoched_fname), exist_ok=True)

@@ -1,3 +1,5 @@
+import pickle
+
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -36,6 +38,7 @@ if __name__ == '__main__':
     CORR_WINDOW_SEC = 1
     SHOW_TIME_PER_CONTACT = False
     NUM_SPLITS = 1250
+    ACTIVE_CONTACTS_ONLY = False
 
     data_availability_obj = data_availability()
     _, contact_list = data_availability_obj.get_contacts_for_2_session_gap(min_timegap_hrs=72, max_timegap_hrs=96, event_type='cntdwn', sub_event_type='CNTDWN')
@@ -48,12 +51,14 @@ if __name__ == '__main__':
             subject_ids[contact['subject']] = id
             id += 1
 
+
     id_vector = np.zeros(len(contact_list), dtype=int)
     resolution_sec = 0.5
     data_mat = np.zeros((2, len(contact_list), int(V_SAMP_PER_SEC * 11)))
     boundries_sec = np.linspace(start=0-1, stop=11-1, num=data_mat.shape[-1] + 1)
     running_first, running_second = ' ', ' '
     dst_idx = 0
+    active_contact_list = []
     for contact in contact_list:
         if (running_first != contact['first']) or (running_second != contact['second']):
             running_first, running_second = contact['first'], contact['second']
@@ -67,8 +72,10 @@ if __name__ == '__main__':
             masks = np.zeros((boundries_sec.size - 1, first_data.times.shape[-1]), dtype=bool)
             for i in range(data_mat.shape[-1]):
                 masks[i] = (first_data.times >= boundries_sec[i]) * (first_data.times < boundries_sec[i+1])
-            contact_activity_1 = (first_p_vals < 0.05) * first_increase# + True
-            contact_activity_2 = (second_p_vals < 0.05) * second_increase# + True
+            contact_activity_1 = (first_p_vals < 0.05) * first_increase
+            contact_activity_2 = (second_p_vals < 0.05) * second_increase
+            #
+            #
         #
         # now read the data in the requsted resolution
         src_idx1 = np.argwhere([contact['name'] == c for c in first_data.ch_names]).squeeze()
@@ -79,14 +86,18 @@ if __name__ == '__main__':
         not_bad2 = not_bad1 and np.any(second_data._data[src_idx1] != 0) # !!!   PATCH    !!!
         not_bad1 = not_bad1 and np.abs(first_data._data[src_idx1]).max() < 3 # !!!   PATCH    !!!
         not_bad2 = not_bad2 and np.abs(second_data._data[src_idx1]).max() < 3 # !!!   PATCH    !!!
-        ok1 = first_p_vals[src_idx1] < 0.05
-        if (src_idx1.size == 1) and (src_idx2.size == 1) and not_bad1 and not_bad2 and (contact_activity_1[src_idx1] and contact_activity_2[src_idx2]):
+        contact_is_active = (contact_activity_1[src_idx1] and contact_activity_2[src_idx2])
+        if (contact_is_active or (not ACTIVE_CONTACTS_ONLY))and  (src_idx1.size == 1) and (src_idx2.size == 1) and not_bad1 and not_bad2:
             for i in range(data_mat.shape[-1]):
                 data_mat[0, dst_idx, i] = (first_data._data[src_idx1] * masks[i]).sum() / masks[i].sum()
                 data_mat[1, dst_idx, i] = (second_data._data[src_idx1] * masks[i]).sum() / masks[i].sum()
             id_vector[dst_idx] = running_subject_id
+            active_contact_list.append({'subject': contact['subject'], 'name': contact['name']})
             dst_idx += 1
     data_mat = data_mat[:, :dst_idx]
+
+    with open('E:/epoched/contact_sel', 'wb') as fd:
+        pickle.dump({'active_contact_list': active_contact_list}, fd)
 
     if SHOW_TIME_PER_CONTACT:
         for i in range(data_mat.shape[1]):
@@ -143,6 +154,7 @@ if __name__ == '__main__':
             plt.pause(0.1)
 
 
+
     fig, ax = plt.subplots(2, 1, sharex=True, sharey=True)
     ax[0].plot(data_mat[0])
     ax[1].plot(data_mat[1])
@@ -197,6 +209,36 @@ if __name__ == '__main__':
     for i in range(1, 11):
         havg[i, :i] = 0
     sns.heatmap(np.round(havg, decimals=2), vmin=-1, vmax=1, ax=ax, annot=True, square=True, cbar=False)
+    plt.show()
+
+    # generating a single rdm from all the data
+    rdm = np.zeros((11, 11))
+    for t1 in range(rdm_size):
+        for t2 in range(rdm_size):
+            for grp in range(2):
+                sig1 = data_mat[0, :, pre_ignore + t1 * delta_time_smple:pre_ignore + (t1 + 1) * delta_time_smple].flatten()
+                sig2 = data_mat[1, :, pre_ignore + t2 * delta_time_smple:pre_ignore + (t2 + 1) * delta_time_smple].flatten()
+                sig1 -= sig1.mean()
+                sig2 -= sig2.mean()
+                if True:  # t1 <= t2:#
+                    rdm[t1, t2] = (sig1 * sig2).sum() / (np.linalg.norm(sig1) * np.linalg.norm(sig2))
+                # if t1 == t2:
+                #     plt.plot(sig1)
+                #     plt.plot(sig2)
+                #     plt.title('t1: {}   t2: {}'.format(t1, t2))
+                #     plt.show()
+    #
+    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+    fig.suptitle('{} contacts'.format(dst_idx))
+    sns.heatmap(np.round(rdm, decimals=2), vmin=-1, vmax=1, ax=ax, annot=True, square=True, cbar=False)
+    plt.show()
+    rdm = (rdm + rdm.T) / 2
+    for i in range(11):
+         for j in range(i):
+            rdm[i, j] = 0
+    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+    fig.suptitle('{} contacts'.format(dst_idx))
+    sns.heatmap(np.round(rdm, decimals=2), vmin=-1, vmax=1, ax=ax, annot=True, square=True, cbar=False)
     plt.show()
 
 
