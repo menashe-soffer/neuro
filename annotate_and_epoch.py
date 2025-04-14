@@ -7,7 +7,11 @@ import path_utils
 from my_mne_wrapper import my_mne_wrapper
 from event_reader import event_reader
 
-base_folder = 'E:/ds004789-download'
+from paths_and_constants import *
+
+import logging
+logging.basicConfig(filename=os.path.join(BASE_FOLDER, os.path.basename(__file__).replace('.py', '.log')), filemode='w')
+
 
 # area of interest definition
 region_list = ['fusiform', 'inferiortemporal', 'lateraloccipital', 'lingual']
@@ -71,12 +75,7 @@ def fit_gaussian(bins, h, init_m, init_sigma):
     return m, sigma, alpha
 
 
-def generate_epoched_version(path, create_new=True, event_name='cntdwn'):
-
-    epoched_fname = path['signals'].replace(base_folder, 'E:/epoched').replace('ieeg', event_name, 1).replace('.edf', '-epo.fif')
-    if os.path.isfile(epoched_fname) and (not create_new):
-        print(epoched_fname, 'ALREADY EXISTS')
-        return
+def read_edf_and_mark_bad_chans_and_segs(path):
 
     mne_wrapper = my_mne_wrapper()
     mne_wrapper.read_edf_file(path['signals'])  # ), chanel_groups=electrodes)
@@ -179,11 +178,11 @@ def generate_epoched_version(path, create_new=True, event_name='cntdwn'):
             # now decide if the channel is to be excluded
             frac_bad_windows = (mcounts > 0).sum() / mcounts.size
             num_events = starts.size
-            print('{}    channel {} {}    frac={:5.3f}  events={}'.format(subject, i_chan, ch_names[i_chan],
+            logging.info('{}    channel {} {}    frac={:5.3f}  events={}'.format(subject, i_chan, ch_names[i_chan],
                                                                           frac_bad_windows, num_events))
             bad_channel_indicator[i_chan] = (frac_bad_windows > 0.05) or (num_events > 50)
             if bad_channel_indicator[i_chan]:  # simple_bad_ch_indicator[i_chan] or
-                print('  exclude channel {} {}'.format(i_chan, ch_names[i_chan]))
+                logging.info('  exclude channel {} {}'.format(i_chan, ch_names[i_chan]))
             else:
                 description = 'bad_' + ch_names[i_chan]
                 event_type = 1000 + i_chan
@@ -230,92 +229,132 @@ def generate_epoched_version(path, create_new=True, event_name='cntdwn'):
             mne_copy.plot()
             plt.show()
 
-        # Epoch
-        # add the annotations
-        event_obj = event_reader(fname=path['events'])
-        event_obj.align_to_sampling_rate(old_sfreq=mne_wrapper.original_sfreq, new_sfreq=mne_wrapper.get_mne().info['sfreq'])
+    return mne_copy, mne_wrapper.original_sfreq
 
-        if event_name == 'cntdwn':
-            epoching_events = event_obj.get_countdowns()
-            #
-            # RANDOM
-            rand_samps = np.sort(np.random.uniform(low=1000, high=mne_copy.times.size-20000, size=len(epoching_events))).astype(int)
-            rand_onset = mne_copy.times[rand_samps]
-            for i_event, event in enumerate(epoching_events):
-                event['onset'] = rand_onset[i_event]
-                event['onset sample'] = rand_samps[i_event]
-                event['end sample'] = rand_samps[i_event] + 5250
-            #
-            description = 'CNTDWN'
-            event_type = 1
-            sub_events = None
-            tmin, tmax = -2.5, 10.5 + 2.5
-            sub_type = 2
-        # if event_name == 'orient':
-        #     epoching_events = event_obj.get_orients()
-        #     description = 'ORIENT'
-        #     event_type = 2
-        if event_name == 'list':
-            epoching_events = event_obj.get_list_events()
-            description = 'LIST'
-            event_type = 4
-            sub_events = event_obj.get_word_events()
-            sub_description = 'WORD'
-            sub_type = 3
-            tmin, tmax = -2.5, 30.5 + 2.5
-            # # TEMPORARY CODE TO GENERATE RANDOMIZATION
-            # description, event_type = 'CNTDWN', 1
-            # tmin, tmax = -2.5, 10.5 + 2.5
-            # for ee in epoching_events:
-            #     shift = np.random.uniform(low=2, high=16)
-            #     ee['onset'] += shift
-            #     ee['onset sample'] += int(shift * fs)
+def generate_epoched_version(path, mne_copy, event_obj, create_new=True, event_name='cntdwn'):
+
+    epoched_fname = path['signals'].replace(BASE_FOLDER, PROC_FOLDER).replace('ieeg', event_name, 1).replace('.edf', '-epo.fif')
+    if os.path.isfile(epoched_fname) and (not create_new):
+        logging.info(epoched_fname + 'ALREADY EXISTS')
+        return
+
+    fs = mne_copy.info['sfreq']
+
+    if event_name == 'random':
+        epoching_events = event_obj.get_countdowns()
+        # RANDOMIZE ONSETS
+        rand_samps = np.sort(np.random.uniform(low=1000, high=mne_copy.times.size-20000, size=len(epoching_events))).astype(int)
+        rand_onset = mne_copy.times[rand_samps]
+        for i_event, event in enumerate(epoching_events):
+            event['onset'] = rand_onset[i_event]
+            event['onset sample'] = rand_samps[i_event]
+            event['end sample'] = rand_samps[i_event] + 5250
+        #
+        description = 'RANDOM'
+        sub_description = None
+        tmin, tmax = -2.5, 10.5 + 2.5
+        sub_description, sub_events = None, None
+    if event_name == 'cntdwn':
+        epoching_events = event_obj.get_countdowns()
+        description = 'CNTDWN'
+        sub_description = 'DIGIT'
+        tmin, tmax = -2.5, 10.5 + 2.5
+        # generating the DIGIT annotations
+        sub_events = []
+        for cntdwn_event in epoching_events:
+            sub_events = sub_events + [{'onset':  cntdwn_event['onset'] + float(i), 'end': cntdwn_event['onset'] + float(i + 1),
+                                        'onset sample': cntdwn_event['onset sample'] + int(fs * i),
+                                        'end sample': cntdwn_event['onset sample'] + int(fs * (i + 1))}  for i in range(10)]
+    if event_name == 'orient':
+        epoching_events = event_obj.get_orients()
+        description = 'ORIENT'
+        sub_description, sub_events = None, None
+        tmin, tmax = -2.5, 9 + 2.5
+    if event_name == 'list':
+        epoching_events = event_obj.get_list_events()
+        description = 'LIST'
+        sub_events = event_obj.get_word_events()
+        sub_description = 'WORD'
+        tmin, tmax = -2.5, 30.5 + 2.5
+
+    event_type = EVENT_TYPES[description]
+    sub_event_type = None if sub_description == None else EVENT_TYPES[sub_description]
+
+    #onset = np.array([e['onset'] for e in countdown_events])
+    onset = np.array([e['onset sample'] / fs for e in epoching_events])
+    duration = np.array([(e['end sample'] - e['onset sample']) / fs for e in epoching_events])
+    mne_copy.annotations.append(onset, duration, description)
+    if sub_events is not None:
+        sub_onset = np.array([e['onset sample'] / fs for e in sub_events])
+        sub_duration = np.array([(e['end sample'] - e['onset sample']) / fs for e in sub_events])
+        mne_copy.annotations.append(sub_onset, sub_duration, sub_description)
+    onset_sample = np.array([e['onset sample'] for e in epoching_events])
+    events_for_epoching = np.zeros((onset_sample.size, 3), dtype=int)
+    events_for_epoching[:, 0] = onset_sample
+    events_for_epoching[:, 2] = event_type
+    # crop_start = onset - 2
+    # crop_end = onset + duration + 2
+
+    # save
+    #mne_copy._data[2] = 1e-6 * (np.arange(mne_copy._data.shape[-1]) % 1000 - 500)
+    epoched = mne.Epochs(mne_copy, events=events_for_epoching, tmin=tmin, tmax=tmax, reject_by_annotation=False, verbose=False)
+    #epoched.ch_amps = mne_copy.get_data().std(axis=1)
+    os.makedirs(os.path.dirname(epoched_fname), exist_ok=True)
+    epoched.save(epoched_fname, overwrite=True, verbose=False)
+
+    SHOW = False
+    if SHOW:
+        epoched1 = mne.read_epochs(epoched_fname)
+        _ = epoched1.plot(scalings=2e-4)
+        plt.show()
 
 
-        #onset = np.array([e['onset'] for e in countdown_events])
-        onset = np.array([e['onset sample'] / fs for e in epoching_events])
-        duration = np.array([(e['end sample'] - e['onset sample']) / fs for e in epoching_events])
-        mne_copy.annotations.append(onset, duration, description)
-        if sub_events:
-            sub_onset = np.array([e['onset sample'] / fs for e in sub_events])
-            sub_duration = np.array([(e['end sample'] - e['onset sample']) / fs for e in sub_events])
-            mne_copy.annotations.append(sub_onset, sub_duration, sub_description)
-        onset_sample = np.array([e['onset sample'] for e in epoching_events])
-        events_for_epoching = np.zeros((onset_sample.size, 3), dtype=int)
-        events_for_epoching[:, 0] = onset_sample
-        events_for_epoching[:, 2] = sub_type
-        # crop_start = onset - 2
-        # crop_end = onset + duration + 2
 
-        # save
-        #mne_copy._data[2] = 1e-6 * (np.arange(mne_copy._data.shape[-1]) % 1000 - 500)
-        epoched = mne.Epochs(mne_copy, events=events_for_epoching, tmin=tmin, tmax=tmax,
-                             reject_by_annotation=False)
-        #epoched.ch_amps = mne_copy.get_data().std(axis=1)
-        os.makedirs(os.path.dirname(epoched_fname), exist_ok=True)
-        epoched.save(epoched_fname, overwrite=True)
+def check_if_files_exist(src_path, event_names, force_override, verbose=True):
 
-        SHOW = False
-        if SHOW:
-            epoched1 = mne.read_epochs(epoched_fname)
-            _ = epoched1.plot(scalings=2e-4)
-            plt.show()
+    exist_mask = np.zeros(len(event_names), dtype=bool)
+    if not force_override:
+        for i, event_name in enumerate(event_names):
+            epoched_path = src_path['signals'].replace(BASE_FOLDER, PROC_FOLDER).replace('ieeg', event_name, 1).replace('.edf', '-epo.fif')
+            exist_mask[i] = os.path.isfile(epoched_path)
+            if exist_mask[i] and verbose:
+                logging.info(epoched_path + '  ALREADY EXISTS')
+
+    events_to_process = [event_names[i] for i in np.argwhere(np.logical_not(exist_mask)).flatten()]
+    return exist_mask, events_to_process
 
 
 
+FORCE_OVERRIDE = False
 from tqdm import tqdm
 fail_list = []
+events_to_process = ['random', 'cntdwn', 'list', 'orient']
 for subject in tqdm(subject_list):
-    paths = path_utils.get_paths(base_folder, subject=subject, mode='bipolar')
+    paths = path_utils.get_paths(BASE_FOLDER, subject=subject, mode='bipolar')
     for path in paths:
-        try:
-            generate_epoched_version(path, create_new=False, event_name='cntdwn')
-        except:
-            fail_list.append(path['signals'])
-            print('FAILED TO GENERATE .fif FROM', path['signals'])
+        _, events_to_process_for_session = check_if_files_exist(src_path=path, event_names=events_to_process, force_override=FORCE_OVERRIDE, verbose=True)
+        if len(events_to_process_for_session) > 0:
+            try:
+                # read .edf file and generate mne_object with annotation of bad chans and segs
+                mne_copy, original_sfreq = read_edf_and_mark_bad_chans_and_segs(path)
+                # read the annotations
+                event_obj = event_reader(fname=path['events'])
+                event_obj.align_to_sampling_rate(old_sfreq=original_sfreq, new_sfreq=mne_copy.info['sfreq'])
+                read_success = True
+            except:
+                logging.warning('FAILED TO READ  ' + path['signals'])
+                fail_list.append(path['signals'])
+                read_success = False
+            if read_success:
+                for event_name in events_to_process_for_session:
+                    try:
+                        generate_epoched_version(path, mne_copy=mne_copy, event_obj=event_obj, create_new=FORCE_OVERRIDE, event_name=event_name)
+                    except:
+                            fail_list.append(path['signals'] + ' : ' + event_name)
+                            logging.warning('FAILED TO GENERATE .fif for {} FROM   {}'.format(event_name, path['signals']))
 
 if len(fail_list) > 0:
-    print('FAILED TO GENERATE THE FOLLOWING FILES:')
+    warning('FAILED TO GENERATE THE FOLLOWING FILES:')
     for fname in fail_list:
         print('\t', fname)
 

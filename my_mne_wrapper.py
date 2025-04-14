@@ -47,7 +47,7 @@ class my_mne_wrapper:
                 include_list = [e for r in chanel_groups for e in self.bipolar_chanel_groups[r]]
 
             if len(include_list) > 0:
-                self.mne = mne.io.read_raw_edf(fname, preload=True, include=include_list)
+                self.mne = mne.io.read_raw_edf(fname, preload=True, include=include_list, verbose=False)
             else:
                 self.exceptions = 'no contacts'
                 return

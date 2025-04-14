@@ -57,6 +57,43 @@ class event_reader:
         return countdowns
 
 
+    def get_orients(self):
+
+        orients = []
+
+        guess_orient_duration = 8
+        guess_fs = (self.df['sample'][1] - self.df['sample'][0]) / (self.df.onset[1] - self.df.onset[0])
+
+        orient_start_idxs = np.argwhere(self.df['trial_type'] == 'ORIENT_START').squeeze()
+        orient_end_idxs = np.argwhere(self.df['trial_type'] == 'ORIENT_END').squeeze()
+        orient_idxs = np.argwhere(self.df['trial_type'] == 'ORIENT').squeeze()
+        all_orient_starts = np.concatenate((orient_start_idxs, orient_idxs))
+        for i_orient, start_idx in enumerate(all_orient_starts):
+            event = dict()
+            line = self.df.iloc[start_idx]
+            event['onset'] = line['onset']
+            event['onset sample'] = line['sample']
+            event['interim events'] = None
+            # try to figure out if there is an end event
+            orient_end_idx = None
+            possible_ends = orient_end_idxs[orient_end_idxs > line['onset']]
+            if possible_ends.size > 0:
+                orient_end_idx = possible_ends[0]
+                if i_orient < all_orient_starts.size - 1:
+                    orient_end_idx = orient_end_idx if orient_end_idx < all_orient_starts[i_orient + 1] else None
+            if orient_end_idx is None:
+                event['end'] = line['onset'] + guess_orient_duration
+                event['end sample'] = int(event['onset sample'] + guess_orient_duration * guess_fs)
+            else:
+                line = self.df.iloc[orient_end_idx]
+                event['end'] = line['onset']
+                event['end sample'] = line['sample']
+
+            orients.append(event)
+
+        return orients
+
+
     def get_word_events(self):
 
         #prectice_event_ids = np.argwhere(self.df['trial_type'] == 'PRACTICE_WORD').flatten()
