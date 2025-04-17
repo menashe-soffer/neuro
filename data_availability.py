@@ -171,7 +171,7 @@ def make_availity_list_by_rules(data, region_list, min_sessions=3, countdown_ran
 class data_availability:
 
     base_folder = 'E:/ds004789-download'
-    processed_folder = 'E:/epoched'
+    processed_folder = 'E:/dr-processed'
 
     def __init__(self, base_folder='E:/ds004789-download', fixed_data_filename='fixed_availability_data'):
 
@@ -179,7 +179,7 @@ class data_availability:
             self.data = pickle.load(fd)
 
 
-    def get_contacts_for_2_session_gap(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None):
+    def get_contacts_for_2_session_gap(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None, epoch_subset=None):
 
         # first make flattened session list
         suitable_session_pairs = []
@@ -208,7 +208,11 @@ class data_availability:
         # intersect with available evoked files
         if event_type is not None:
 
-            pattern = os.path.join(self.processed_folder, 'sub-R*', 'ses-*', event_type, '*' + sub_event_type + '-ieeg-evoked-ave.fif')
+            #pattern = os.path.join(self.processed_folder, 'sub-R*', 'ses-*', event_type, '*' + sub_event_type + '-ieeg-evoked-ave.fif')
+            if epoch_subset is None:
+                pattern = os.path.join(self.processed_folder, 'sub-R*', 'ses-*', event_type, '*bipolar_-' + sub_event_type + '-ieeg-evoked-ave.fif')
+            else:
+                pattern = os.path.join(self.processed_folder, 'sub-R*', 'ses-*', event_type, '*subset-{}--'.format(epoch_subset) + sub_event_type + '-ieeg-evoked-ave.fif')
             evoked_list = glob.glob(pattern)
             revised_pair_list = []
             for pair in suitable_session_pairs:

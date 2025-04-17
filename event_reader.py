@@ -62,7 +62,7 @@ class event_reader:
         orients = []
 
         guess_orient_duration = 8
-        guess_fs = (self.df['sample'][1] - self.df['sample'][0]) / (self.df.onset[1] - self.df.onset[0])
+        guess_fs = (self.df['sample'][self.df.shape[0]] - self.df['sample'][0]) / (self.df.onset[self.df.shape[0]] - self.df.onset[0])
 
         orient_start_idxs = np.argwhere(self.df['trial_type'] == 'ORIENT_START').squeeze()
         orient_end_idxs = np.argwhere(self.df['trial_type'] == 'ORIENT_END').squeeze()

@@ -11,10 +11,15 @@ import mne
 from path_utils import get_paths
 #from my_montage_reader import my_montage_reader
 
+from paths_and_constants import *
+
+import logging
+logging.basicConfig(filename=os.path.join(BASE_FOLDER, os.path.basename(__file__).replace('.py', '.log')), filemode='w', level=logging.DEBUG)
+
 global base_folder
-base_folder = 'E:/ds004789-download'
+base_folder = BASE_FOLDER#'E:/ds004789-download'
 global epoched_folder
-epoched_folder = 'E:/epoched'
+epoched_folder = PROC_FOLDER#'E:/epoched'
 
 def find_epoched_subject(base_folder, epoched_folder, min_sessions=2, type='cntdwn'):
 
@@ -200,7 +205,31 @@ def add_synthetic_sub_annotations(epoched, event_type='CNTDWN', sub_event_type='
     return
 
 
-def process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, proc_params_sub, SHOW, SHOW_ONLY):
+
+def norm_show_save(evoked, epoched_file, proc_params, event_type, normalize=True, SHOW=True, SHOW_ONLY=True, i_subset=None):
+
+    if normalize:
+        norm_mask = (evoked.times >= -0.5) * (evoked.times <= -0.05)
+        for i_chan in range(evoked._data.shape[0]):
+            nf = np.linalg.norm(evoked._data[i_chan][norm_mask]) / np.sqrt(norm_mask.sum())
+            evoked._data[i_chan] /= (nf + 1e-64)
+
+    if i_subset is not None:
+        epoched_file = epoched_file.replace('ieeg-epo', 'subset-' + str(i_subset) + '-ieeg-epo' )
+
+    p_values, increase_mask, _ = calculate_p_values(evoked.copy(), pre_intvl=proc_params['pre_intvl'], post_intval=proc_params['post_intvl'],
+                                                    display_post_cursor=proc_params['display_post_cursor'], display_seperator_pitch=proc_params['display_seperator_pitch'],
+                                                    display_title=epoched_file, show=SHOW)
+    if not SHOW_ONLY:
+        evoked_file = epoched_file.replace('ieeg-epo', '-' + event_type + '-ieeg-evoked-ave')
+        with mne.use_log_level('WARNING'):
+            evoked.save(evoked_file, overwrite=True)
+
+
+
+def process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, proc_params_sub, SHOW, SHOW_ONLY, subsets=None):
+
+    MIN_EPOCHS_TO_PROCESS = 6
 
     epoched = mne.read_epochs(epoched_file, verbose=False)
     # cmplx_signal = epoched.apply_hilbert().get_data()
@@ -218,41 +247,48 @@ def process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, 
 
     epoched_gamma = apply_gamma_responces(epoched=epoched, epoch_mask=epoch_mask)
     #
-    # TEMPORARY PATCH: ADD SUB EVENTS
-    if sub_event_type == 'DIGIT':
-        add_synthetic_sub_annotations(epoched_gamma)
-        annotations = epoched_gamma.get_annotations_per_epoch()
+    # CONSIDER NORMALIZING HERE BY: nf = epoched_gamma._data.mean(axis=-1).mean(axis=0)
+    #
+    # identifying bad epochs
+    num_epoch = len(epoched_gamma.selection)
+    epoch_mask = np.ones(num_epoch, dtype=bool)
+    event_idxs = np.argwhere([a == event_type for a in epoched_gamma.annotations.description]).flatten()
+    event_onsets = epoched_gamma.annotations.onset[event_idxs]
+    epoch_starts = event_onsets + epoched_gamma.times[0]
+    epoch_stops = event_onsets + epoched_gamma.times[-1]
+    #epoch_times = np.array([onset + epoched_gamma.times for onset in event_onsets])
+    for annotation in epoched_gamma.annotations:
+        if annotation['description'][:3].lower() == 'bad':
+            bad_start = annotation['onset']
+            bad_end = bad_start + annotation['duration']
+            for i_epoch, (epoch_start, epoch_end) in enumerate(zip(epoch_starts, epoch_stops)):
+                epoch_mask[i_epoch] *= (bad_end < epoch_start) or (bad_start > epoch_end)
+    indices_to_keep = epoched_gamma.selection[np.argwhere(epoch_mask).flatten()]
+    if indices_to_keep.size < MIN_EPOCHS_TO_PROCESS:
+        logging.warning(epoched_file + ' : not enough UNCORRUPTED epochs for {}   (needed {},  avail {})'.format(event_type, MIN_EPOCHS_TO_PROCESS, indices_to_keep.size))
+        return
+    epoched_gamma = epoched_gamma[indices_to_keep]
+    epoched_gamma.selection = np.arange(epoched_gamma.selection.size)
+
 
     evoked = epoched_gamma.average('data')
-    norm_mask = (evoked.times >= -0.5) * (evoked.times <= -0.05)
-    for i_chan in range(evoked._data.shape[0]):
-        nf = np.linalg.norm(evoked._data[i_chan][norm_mask]) / np.sqrt(norm_mask.sum())
-        evoked._data[i_chan] /= (nf + 1e-64)
+    norm_show_save(evoked, epoched_file, proc_params, event_type, normalize=True, SHOW=SHOW, SHOW_ONLY=SHOW_ONLY)
 
-    # # relation between major and sub events
-    # idx_major = np.argwhere([e == event_type for e in epoched_gamma.annotations.description]).flatten()
-    # idx_sub = np.argwhere([e == sub_event_type for e in epoched_gamma.annotations.description]).flatten()
-    # onset_major = epoched_gamma.annotations.onset[idx_major]
-    # onset_sub = epoched_gamma.annotations.onset[idx_sub]
-    # relative_onsets = []
-    # for i_major, (onset, next_onset) in enumerate(zip(onset_major[:-1], onset_major[1:])):
-    #     relative_onsets.append(onset_sub[(onset_sub >= onset) * (onset_sub < next_onset)] - onset)
+    if subsets is not None:
+        for i_subset, subset in enumerate(subsets):
+            if len(set(subset) & set(epoched_gamma.selection)) == len(subset): # all needed instances in subset
+                evoked_sbst = epoched_gamma[subset].average('data')
+                norm_show_save(evoked_sbst, epoched_file, proc_params, event_type, normalize=True, SHOW=SHOW, SHOW_ONLY=SHOW_ONLY, i_subset=i_subset)
+            else:
+                logging.warning('epoched for set {} missing in {}'.format(i_subset, epoched_file))
 
-    p_values, increase_mask, _ = calculate_p_values(evoked.copy(), pre_intvl=proc_params['pre_intvl'], post_intval=proc_params['post_intvl'],
-                                                    display_post_cursor=proc_params['display_post_cursor'], display_seperator_pitch=proc_params['display_seperator_pitch'],
-                                                    display_title=epoched_file, show=SHOW)
-    if not SHOW_ONLY:
-        evoked_file = epoched_file.replace('ieeg-epo', '-' + event_type + '-ieeg-evoked-ave')
-        evoked.save(evoked_file, overwrite=True)
-        with open(os.path.join(os.path.dirname(epoched_file), 'p_values_' + event_type), 'wb') as fd:
-            pickle.dump(dict({'ch_names': ch_names, 'p_values': p_values, 'increase_mask': increase_mask}), fd)
     #
     # sub event
     mask = np.array([d == event_type for d in epoched.annotations.description]).flatten()
     events_for_sub_epoching = np.zeros((mask.sum(), 3))
     events_for_sub_epoching[:, 0] = epoched.annotations.onset[mask]
-    durations = epoched.annotations.duration[mask].max()
 
+    # generate new epoched mne object with the sub events epoched
     fs = epoched_gamma.info['sfreq']
     epoched_data = epoched_gamma.get_data()
     major_duration = (epoched_data.shape[-1] - 1) / fs
@@ -268,26 +304,10 @@ def process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, 
     events_for_epoching[:, 0] = (semi_raw.annotations.onset * fs).astype(int)
     events_for_epoching[:, 2] = 0
     # BIG TBD: KKEP BAD EVENTS, ASSIGN EVENT TYPES TO DISTINGUISH
-    sub_epoched = mne.Epochs(semi_raw, events=events_for_epoching, tmin=-1, tmax=sub_events_inner[:, 1].max() + 1,
-                             baseline=None, preload=True)
+    sub_epoched = mne.Epochs(semi_raw, events=events_for_epoching, tmin=-1, tmax=sub_events_inner[:, 1].max() + 1, baseline=None, preload=True, verbose=False)
     #normalize_all_epochs(sub_epoched)
     sub_evoked = sub_epoched.average('data')
-    #
-    norm_mask = (sub_evoked.times >= -0.5) * (sub_evoked.times <= -0.05)
-    for i_chan in range(sub_evoked._data.shape[0]):
-        nf = np.linalg.norm(sub_evoked._data[i_chan][norm_mask]) / np.sqrt(norm_mask.sum())
-        sub_evoked._data[i_chan] /= (nf + 1e-64)
-    #
-
-    p_values, increase_mask, _ = calculate_p_values(sub_evoked.copy(), pre_intvl=proc_params_sub['pre_intvl'], post_intval=proc_params_sub['post_intvl'],
-                                                    display_post_cursor=proc_params_sub['display_post_cursor'], display_seperator_pitch=proc_params_sub['display_seperator_pitch'],
-                                                    display_title=epoched_file, show=SHOW)
-
-    if not SHOW_ONLY:
-        evoked_file = epoched_file.replace('ieeg-epo', '-' + sub_event_type + '-ieeg-evoked-ave')
-        evoked.save(evoked_file, overwrite=True)
-        with open(os.path.join(os.path.dirname(epoched_file), 'p_values_' + sub_event_type), 'wb') as fd:
-            pickle.dump(dict({'ch_names': ch_names, 'p_values': p_values, 'increase_mask': increase_mask}), fd)
+    norm_show_save(sub_evoked, epoched_file.replace(event_type, sub_event_type), proc_params_sub, sub_event_type, normalize=True, SHOW=SHOW, SHOW_ONLY=SHOW_ONLY)
 
     if SHOW:
         plt.show()
@@ -327,9 +347,10 @@ if __name__ == '__main__':
     for subject_item in tqdm.tqdm(list):
         for epoched_file in subject_item['epoched']:
             try:
-                process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, proc_params_sub, SHOW, SHOW_ONLY)
+                process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, proc_params_sub, SHOW, SHOW_ONLY, subsets=[range(0, 6), range(6, 12)])
             except:
                 fail_list.append(epoched_file)
+                logging.warning(epoched_file + '  :   FAILED')
 
     elapsed = time.time() - tstart
 

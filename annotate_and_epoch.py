@@ -10,7 +10,7 @@ from event_reader import event_reader
 from paths_and_constants import *
 
 import logging
-logging.basicConfig(filename=os.path.join(BASE_FOLDER, os.path.basename(__file__).replace('.py', '.log')), filemode='w')
+logging.basicConfig(filename=os.path.join(BASE_FOLDER, os.path.basename(__file__).replace('.py', '.log')), filemode='w', level=logging.DEBUG)
 
 
 # area of interest definition
@@ -294,6 +294,9 @@ def generate_epoched_version(path, mne_copy, event_obj, create_new=True, event_n
     events_for_epoching[:, 2] = event_type
     # crop_start = onset - 2
     # crop_end = onset + duration + 2
+    # make sure the events are chronologically ordered
+    order = np.argsort(events_for_epoching[:, 0])
+    events_for_epoching = events_for_epoching[order]
 
     # save
     #mne_copy._data[2] = 1e-6 * (np.arange(mne_copy._data.shape[-1]) % 1000 - 500)
@@ -328,7 +331,7 @@ def check_if_files_exist(src_path, event_names, force_override, verbose=True):
 FORCE_OVERRIDE = False
 from tqdm import tqdm
 fail_list = []
-events_to_process = ['random', 'cntdwn', 'list', 'orient']
+events_to_process = ['random', 'cntdwn', 'list']#, 'orient'] #orient has a bug' need to troubleshoot
 for subject in tqdm(subject_list):
     paths = path_utils.get_paths(BASE_FOLDER, subject=subject, mode='bipolar')
     for path in paths:
@@ -354,7 +357,7 @@ for subject in tqdm(subject_list):
                             logging.warning('FAILED TO GENERATE .fif for {} FROM   {}'.format(event_name, path['signals']))
 
 if len(fail_list) > 0:
-    warning('FAILED TO GENERATE THE FOLLOWING FILES:')
+    print('FAILED TO GENERATE THE FOLLOWING FILES:')
     for fname in fail_list:
         print('\t', fname)
 

@@ -31,17 +31,118 @@ def consistant_random_grouping(data, num_groups=2, pindex=2, axis=0):
     return groups
 
 
+def generate_rdm(split_data, rdm_size, pre_ignore, delta_time_smple, ses):
+    num_grps = split_data.shape[0]
+    assert num_grps <= 2
+    rdms = np.zeros((num_grps, rdm_size, rdm_size))  # {random group, time(1), time(2)}
+    for t1 in range(rdm_size):
+        for t2 in range(rdm_size):
+            for grp in range(num_grps):
+                sig1 = split_data[grp, ses[0], :, pre_ignore + t1 * delta_time_smple:pre_ignore + (t1 + 1) * delta_time_smple].flatten()
+                sig2 = split_data[grp, ses[1], :, pre_ignore + t2 * delta_time_smple:pre_ignore + (t2 + 1) * delta_time_smple].flatten()
+                sig1 -= sig1.mean()
+                sig2 -= sig2.mean()
+                if True:  # t1 <= t2:#
+                    rdms[grp, t1, t2] = (sig1 * sig2).sum() / (np.linalg.norm(sig1) * np.linalg.norm(sig2) + 1e-16)
+                # if t1 == t2:
+                #     plt.plot(sig1)
+                #     plt.plot(sig2)
+                #     plt.title('t1: {}   t2: {}'.format(t1, t2))
+                #     plt.show()
+
+    return rdms
+
+
+def visualize_rdms(rdms, title=''):
+
+    num_splits = rdms.shape[0]
+
+    # generating the correlation bars
+    ylow, yhigh = max(-0.1, np.floor(np.quantile(rdms, 0.05) * 10) / 10), np.ceil(np.quantile(rdms, 0.95) * 10) / 10
+    fig_bars, ax_bars = plt.subplots(12, 1, figsize=(6, 10))
+    for t1 in range(12):
+        ax_bars[t1].grid(True)
+        ax_bars[t1].set_yticks(np.arange(start=-1, stop=1, step=0.1))
+        ax_bars[t1].set_ylim([ylow, yhigh])
+        ax_bars[t1].set_xlim([-1.5, 10.5])
+        ax_bars[t1].set_ylabel(str(t1-1))
+        ax_bars[t1].yaxis.set_tick_params(labelleft=False)
+        ax_bars[t1].plot([-2, 11], [0, 0], c='k', linewidth=2)
+        for t2 in range(12):
+            ax_bars[t1].bar(t2-1, rdms[:, t1, t2].mean(), width=0.25, color='k' if t1==t2 else 'b')
+            ax_bars[t1].errorbar(t2-1, rdms[:, t1, t2].mean(), yerr=3*rdms[:, t1, t2].std(), elinewidth=2.5, ecolor='r')
+    #plt.show()
+
+    # generating the correlation histograms
+    bin_boundaries = np.linspace(start=rdms.min(), stop=rdms.max(), num=36 if data_mat.shape[1] < 600 else 72)
+    bins = (bin_boundaries[:-1] + bin_boundaries[1:]) / 2
+    hist_0_0, hist_0_n, hist_1_1, hist_1_n, hist_n_n, hist_n_m = \
+        np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size)
+
+    fig_husts, ax_hists = plt.subplots(1, 1)
+    for t1 in range(12):
+        for t2 in range(t1, 12):
+            h1 = np.histogram(rdms[:, t1, t2], bins=bin_boundaries, density=True)[0]
+            h2 = np.histogram(rdms[:, t2, t1], bins=bin_boundaries, density=True)[0]
+            h = (h1 + h2) / 2
+            if (t1 > 1) and (t2 > 1) and (t1 == t2):
+                c, w = 'r', 1
+                hist_n_n += h
+            if (t1 > 1) and (t2 > 1) and (t1 != t2):
+                c, w = 'k', 1
+                hist_n_m += h
+            if (min(t1, t2) == 1) and (t1 != t2):
+                c, w = 'b', 1
+                hist_1_n += h
+            if (t1 == 1) and (t2 == 1):
+                c, w = 'g', 3
+                hist_1_1 += h
+            if (min(t1, t2) == 0) and (t1 != t2):
+                c, w = 'c', 1
+                hist_0_n += h
+            if (t1 == 0) and (t2 == 0):
+                c, w = 'm', 2
+                hist_0_0 += h
+            ax_hists.plot(bins, h, c=c, linewidth=w)
+    #plt.show()
+
+    fig_havg, ax_havg = plt.subplots(1, 1)
+    ax_havg.plot(bins, hist_0_0 / hist_0_0.sum(), c='m', linewidth=2, label='baseline / baseline')
+    ax_havg.plot(bins, hist_0_n / hist_0_n.sum(), c='c', linewidth=1, label='baseline / digit')
+    ax_havg.plot(bins, hist_1_n / hist_1_n.sum(), c='b', linewidth=1, label='1 / 2-9')
+    ax_havg.plot(bins, hist_1_1 / hist_1_1.sum(), c='g', linewidth=3, label='1 / 1')
+    ax_havg.plot(bins, hist_n_m / hist_n_m.sum(), c='k', linewidth=1, label='2-9 / other 2-9')
+    ax_havg.plot(bins, hist_n_n / hist_n_n.sum(), c='r', linewidth=3, label='2-9 / 2-9')
+    ax_havg.legend()
+    ax_havg.grid(True)
+    fig_havg.suptitle('{}\n{} contacts, {} split permutations'.format(title, dst_idx, num_splits))
+    #plt.show()
+
+    fig_pc, ax_pc = plt.subplots(1, 1, figsize=(6, 6))
+    fig_folded, ax_folded = plt.subplots(1, 1, figsize=(6, 6))
+    fig_pc.suptitle('{}\n{} contacts, {} split permutations'.format(title, dst_idx, num_splits))
+    fig_folded.suptitle('{}\n{} contacts, {} split permutations'.format(title, dst_idx, num_splits))
+    sns.heatmap(np.round(rdms.mean(axis=0), decimals=2), vmin=-1, vmax=1, ax=ax_pc, annot=True, square=True, cbar=False)
+    havg = rdms.mean(axis=0)
+    havg = (havg + havg.T) / 2
+    for i in range(1, 12):
+        havg[i, :i] = 0
+    sns.heatmap(np.round(havg, decimals=2), vmin=-1, vmax=1, ax=ax_folded, annot=True, square=True, cbar=False)
+    plt.show()
+
+
 
 if __name__ == '__main__':
 
     V_SAMP_PER_SEC = 4
     CORR_WINDOW_SEC = 1
     SHOW_TIME_PER_CONTACT = False
-    NUM_SPLITS = 1250
+    NUM_SPLITS = 250#1250
     ACTIVE_CONTACTS_ONLY = False
+    EPOCH_SUBSET = 0#None
 
     data_availability_obj = data_availability()
-    _, contact_list = data_availability_obj.get_contacts_for_2_session_gap(min_timegap_hrs=72, max_timegap_hrs=96, event_type='cntdwn', sub_event_type='CNTDWN')
+    _, contact_list = data_availability_obj.get_contacts_for_2_session_gap(min_timegap_hrs=72, max_timegap_hrs=96, event_type='cntdwn', sub_event_type='CNTDWN', epoch_subset=EPOCH_SUBSET)
 
     # make a dictionary og integer subject id's
     subject_ids = dict()
@@ -54,8 +155,10 @@ if __name__ == '__main__':
 
     id_vector = np.zeros(len(contact_list), dtype=int)
     resolution_sec = 0.5
-    data_mat = np.zeros((2, len(contact_list), int(V_SAMP_PER_SEC * 11)))
-    boundries_sec = np.linspace(start=0-1, stop=11-1, num=data_mat.shape[-1] + 1)
+    # data_mat = np.zeros((2, len(contact_list), int(V_SAMP_PER_SEC * 11)))
+    # boundries_sec = np.linspace(start=0-1, stop=11-1, num=data_mat.shape[-1] + 1)
+    data_mat = np.zeros((2, len(contact_list), int(V_SAMP_PER_SEC * 12)))
+    boundries_sec = np.linspace(start=0-1, stop=11, num=data_mat.shape[-1] + 1)
     running_first, running_second = ' ', ' '
     dst_idx = 0
     active_contact_list = []
@@ -77,7 +180,7 @@ if __name__ == '__main__':
             #
             #
         #
-        # now read the data in the requsted resolution
+        # now read the data in the requested resolution
         src_idx1 = np.argwhere([contact['name'] == c for c in first_data.ch_names]).squeeze()
         src_idx2 = np.argwhere([contact['name'] == c for c in second_data.ch_names]).squeeze()
         not_bad1 = np.logical_not(np.any([contact['name'] == b for b in first_data.info['bads']]))
@@ -112,34 +215,27 @@ if __name__ == '__main__':
             if i % 400 == 399:
                 plt.show()
 
+
+    # show the signals
+    fig, ax = plt.subplots(2, 1, sharex=True, sharey=True)
+    ax[0].plot(data_mat[0])
+    ax[0].set_ylabel('early\nsession')
+    ax[1].plot(data_mat[1])
+    ax[1].set_ylabel('succeeding\nsession')
+    plt.show()
+
+    # NOW DO THE RDM ANALYSIS
     pre_ignore = 0#V_SAMP_PER_SEC # 1 second in the begining
     delta_time_smple = int(V_SAMP_PER_SEC * CORR_WINDOW_SEC)
     rdm_size = int((data_mat.shape[-1] - pre_ignore) / delta_time_smple)
     rdm_results = np.zeros((2 * NUM_SPLITS, rdm_size, rdm_size))
 
-    print('collecting tqdm statistics')
+    print('collecting statistics')
     for split_id in tqdm.tqdm(range(1, NUM_SPLITS)):
         split_data = consistant_random_grouping(data_mat, pindex=split_id, axis=1)
         split_data = np.array(split_data) # axes: {contact group, session, contact (within group), time)
         # correlation between corresponding seconds is different sessions
-        rdms = np.zeros((2, rdm_size, rdm_size)) # {random group, time(1), time(2)}
-        for t1 in range(rdm_size):
-            for t2 in range(rdm_size):
-                for grp in range(2):
-                    #sig1 = split_data[grp, 0, :, t1*2*4:(t1+1)*2*4].sum(axis=1)
-                    #sig2 = split_data[grp, 1, :, t2*2*4:(t2+1)*2*4].sum(axis=1)
-                    sig1 = split_data[grp, 0, :, pre_ignore + t1*delta_time_smple:pre_ignore + (t1+1)*delta_time_smple].flatten()
-                    sig2 = split_data[grp, 1, :, pre_ignore + t2*delta_time_smple:pre_ignore + (t2+1)*delta_time_smple].flatten()
-                    sig1 -= sig1.mean()
-                    sig2 -= sig2.mean()
-                    if True:#t1 <= t2:#
-                        rdms[grp, t1, t2] = (sig1 * sig2).sum() / (np.linalg.norm(sig1) * np.linalg.norm(sig2))
-                    # if t1 == t2:
-                    #     plt.plot(sig1)
-                    #     plt.plot(sig2)
-                    #     plt.title('t1: {}   t2: {}'.format(t1, t2))
-                    #     plt.show()
-        #
+        rdms = generate_rdm(split_data, rdm_size, pre_ignore, delta_time_smple, ses=[0, 1])
         rdm_results[split_id * 2] = rdms[0]
         rdm_results[split_id * 2 + 1] = rdms[1]
         #
@@ -152,94 +248,73 @@ if __name__ == '__main__':
             ax[1].set_title('random contact sel {} / {}'.format(split_id, 2))
             plt.show(block=False)
             plt.pause(0.1)
+    visualize_rdms(rdm_results)
 
 
-
-    fig, ax = plt.subplots(2, 1, sharex=True, sharey=True)
-    ax[0].plot(data_mat[0])
-    ax[1].plot(data_mat[1])
-    plt.show()
-
-    # generating the correlation histograms
-    bin_boundaries = np.linspace(start=rdm_results.min(), stop=rdm_results.max(), num=36 if data_mat.shape[1] < 600 else 72)
-    bins = (bin_boundaries[:-1] + bin_boundaries[1:]) / 2
-    hist_0_0, hist_0_n, hist_1_1, hist_1_n, hist_n_n, hist_n_m = \
-        np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size)
-    fig, ax = plt.subplots(1, 1)
-    for t1 in range(11):
-        for t2 in range(t1, 11):
-            h1 = np.histogram(rdm_results[:, t1, t2], bins=bin_boundaries, density=True)[0]
-            h2 = np.histogram(rdm_results[:, t2, t1], bins=bin_boundaries, density=True)[0]
-            h = (h1 + h2) / 2
-            if (t1 > 1) and (t2 > 1) and (t1 == t2):
-                c, w = 'r', 1
-                hist_n_n += h
-            if (t1 > 1) and (t2 > 1) and (t1 != t2):
-                c, w = 'k', 1
-                hist_n_m += h
-            if (min(t1, t2) == 1) and (t1 != t2):
-                c, w = 'b', 1
-                hist_1_n += h
-            if (t1 == 1) and (t2 == 1):
-                c, w = 'g', 3
-                hist_1_1 += h
-            if (min(t1, t2) == 0) and (t1 != t2):
-                c, w = 'c', 1
-                hist_0_n += h
-            if (t1 == 0) and (t2 == 0):
-                c, w = 'm', 2
-                hist_0_0 += h
-            ax.plot(bins, h, c=c, linewidth=w)
-    plt.show()
-    plt.plot(bins, hist_0_0 / hist_0_0.sum(), c='m', linewidth=2, label='baseline / baseline')
-    plt.plot(bins, hist_0_n / hist_0_n.sum(), c='c', linewidth=1, label='baseline / digit')
-    plt.plot(bins, hist_1_n / hist_1_n.sum(), c='b', linewidth=1, label='1 / 2-9')
-    plt.plot(bins, hist_1_1 / hist_1_1.sum(), c='g', linewidth=3, label='1 / 1')
-    plt.plot(bins, hist_n_m / hist_n_m.sum(), c='k', linewidth=1, label='2-9 / other 2-9')
-    plt.plot(bins, hist_n_n / hist_n_n.sum(), c='r', linewidth=3, label='2-9 / 2-9')
-    plt.legend()
-    plt.grid(True)
-    plt.suptitle('{} contacts, {} split permutations'.format(dst_idx, NUM_SPLITS))
-    plt.show()
-
-    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-    fig.suptitle('{} contacts, {} split permutations'.format(dst_idx, NUM_SPLITS))
-    havg = rdm_results.mean(axis=0)
-    havg = (havg + havg.T) / 2
-    for i in range(1, 11):
-        havg[i, :i] = 0
-    sns.heatmap(np.round(havg, decimals=2), vmin=-1, vmax=1, ax=ax, annot=True, square=True, cbar=False)
-    plt.show()
 
     # generating a single rdm from all the data
-    rdm = np.zeros((11, 11))
-    for t1 in range(rdm_size):
-        for t2 in range(rdm_size):
-            for grp in range(2):
-                sig1 = data_mat[0, :, pre_ignore + t1 * delta_time_smple:pre_ignore + (t1 + 1) * delta_time_smple].flatten()
-                sig2 = data_mat[1, :, pre_ignore + t2 * delta_time_smple:pre_ignore + (t2 + 1) * delta_time_smple].flatten()
-                sig1 -= sig1.mean()
-                sig2 -= sig2.mean()
-                if True:  # t1 <= t2:#
-                    rdm[t1, t2] = (sig1 * sig2).sum() / (np.linalg.norm(sig1) * np.linalg.norm(sig2))
-                # if t1 == t2:
-                #     plt.plot(sig1)
-                #     plt.plot(sig2)
-                #     plt.title('t1: {}   t2: {}'.format(t1, t2))
-                #     plt.show()
-    #
-    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-    fig.suptitle('{} contacts'.format(dst_idx))
-    sns.heatmap(np.round(rdm, decimals=2), vmin=-1, vmax=1, ax=ax, annot=True, square=True, cbar=False)
-    plt.show()
-    rdm = (rdm + rdm.T) / 2
-    for i in range(11):
-         for j in range(i):
-            rdm[i, j] = 0
-    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-    fig.suptitle('{} contacts'.format(dst_idx))
-    sns.heatmap(np.round(rdm, decimals=2), vmin=-1, vmax=1, ax=ax, annot=True, square=True, cbar=False)
-    plt.show()
+    rdm = generate_rdm(np.expand_dims(data_mat, axis=0), rdm_size, pre_ignore, delta_time_smple, ses=[0, 1])
+    visualize_rdms(rdm)
+
+
+    # NOW DO RELATIVE REPRASENTATION ANALISYS
+    # A RELATIVE REPRESENTATION IS A LINE IN THE "SELF" RDM (MAYBE EXCLUDING THE DIAGONAL)
+
+    # rdm results per split
+    rdm_results = np.zeros((2, 2 * NUM_SPLITS, rdm_size, rdm_size))
+    print('now making in-session rdm''s to generate relative representations')
+    for split_id in tqdm.tqdm(range(1, NUM_SPLITS)):
+        split_data = consistant_random_grouping(data_mat, pindex=split_id, axis=1)
+        split_data = np.array(split_data) # axes: {contact group, session, contact (within group), time)
+        for sess in range(2):
+            rdms = generate_rdm(split_data, rdm_size, pre_ignore, delta_time_smple, ses=[sess, sess])
+            rdm_results[sess, split_id * 2] = rdms[0]
+            rdm_results[sess, split_id * 2 + 1] = rdms[1]
+    visualize_rdms(rdm_results[0], title='RDMS for early session')
+    visualize_rdms(rdm_results[1], title='RDMS for subsequent session')
+    # relreps = np.zeros((2, 2 * NUM_SPLITS, rdm_size, rdm_size))
+    # # remove the 1 correlation between a digit and itself
+    # for i in range(rdm_size):
+    #     relreps[:, :, i, :i] = rdm_results[:, :, i, :i]
+    #     relreps[:, :, i, i:] = rdm_results[:, :, i, i+1:]
+    # remove the before countdown and after countdown
+    # relreps = relreps[:, :, 1:-1, 1:-1]
+    relreps = rdm_results[:, :, 1:-1, 1:-1]
+
+    rep_pcors = np.zeros((2 * NUM_SPLITS, rdm_size, rdm_size))
+    for i_split in range(2 * NUM_SPLITS):
+        for digit_1 in range(10):
+            for difit_2 in range(10):
+                v1, v2 = relreps[0, i_split, digit_1], relreps[1, i_split, difit_2]
+                rep_pcors[i_split, digit_1+1, difit_2+1] = (v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
+      # for i_split in range(2 * NUM_SPLITS):
+    #     rep_pcors[i_split] = (relreps[0, i_split] @ relreps[1, i_split].T) / np.sqrt(((relreps[0, i_split] @ relreps[0, i_split].T) * (relreps[1, i_split] @ relreps[1, i_split].T) + 1e-12))
+    visualize_rdms(rep_pcors, title='relative representation p-correlations')
+
+    # now use the average relative representation
+    rep_pcors = np.zeros((rdm_size, rdm_size))
+    relreps = relreps.mean(axis=1)
+    for digit_1 in range(10):
+        for difit_2 in range(10):
+            v1, v2 = relreps[0, digit_1], relreps[1, difit_2]
+            rep_pcors[digit_1 + 1, difit_2 + 1] = (v1 * v2).sum() / (
+                        np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
+    visualize_rdms(np.expand_dims(rep_pcors, axis=0), title='using average of relative representation among splits')
+
+    # now just use a single vector, no splits
+    rdm0 = generate_rdm(np.expand_dims(data_mat, axis=0), rdm_size, pre_ignore, delta_time_smple, ses=[0, 0])
+    rdm1 = generate_rdm(np.expand_dims(data_mat, axis=0), rdm_size, pre_ignore, delta_time_smple, ses=[1, 1])
+    visualize_rdms(rdm0, title='RDM for early session')
+    visualize_rdms(rdm1, title='RDM RDMS for subsequent session')
+    relreps = np.zeros((2, 10, 10))
+    relreps[0] = rdm0[:, 1:-1, 1:-1]
+    relreps[1] = rdm1[:, 1:-1, 1:-1]
+    rep_pcors = np.zeros((rdm_size, rdm_size))
+    for digit_1 in range(10):
+        for difit_2 in range(10):
+            v1, v2 = relreps[0, digit_1], relreps[1, difit_2]
+            rep_pcors[digit_1 + 1, difit_2 + 1] = (v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
+    visualize_rdms(np.expand_dims(rep_pcors, axis=0), title='full vector relative representation correlation')
 
 
 
