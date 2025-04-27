@@ -216,6 +216,7 @@ def read_data_single_two_sessions_single_epoch(contact_list, active_contacts_onl
 
 
 
+
 if __name__ == '__main__':
 
     V_SAMP_PER_SEC = 4
@@ -228,28 +229,9 @@ if __name__ == '__main__':
     MIN_TGAP, MAX_TGAP = 60, 160# 72, 96
 
     data_availability_obj = data_availability()
-    _, contact_list = data_availability_obj.get_contacts_for_2_session_gap(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
-                                                                           event_type='cntdwn', sub_event_type='CNTDWN', epoch_subset=EPOCH_SUBSET)
-    if OTHER_EPOCH_SUBSET is not None:
-        _, contact_list2 = data_availability_obj.get_contacts_for_2_session_gap(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
-                                                                                event_type='cntdwn', sub_event_type='CNTDWN', epoch_subset=OTHER_EPOCH_SUBSET)
-        # TBD find intersect of two lists
-        combined_list = []
-        rplc_pattrn_1, rplc_pattern2 = '_subset-' + str(EPOCH_SUBSET), '_subset-' + str(OTHER_EPOCH_SUBSET)
-        for i_cntct, contact in tqdm.tqdm(enumerate(contact_list)):
-            # check if the same contact apears in the second list
-            exist2 = False
-            for i_cntct2, contact2 in enumerate(contact_list2):
-                if contact['subject'] == contact2['subject']:
-                    if contact['name'] == contact2['name']:
-                        ok1 = contact['first'].replace(rplc_pattrn_1, rplc_pattern2) == contact2['first']
-                        ok2 = contact['second'].replace(rplc_pattrn_1, rplc_pattern2) == contact2['second']
-                        if ok1 and ok2:
-                            contact['first2'] = contact2['first']
-                            contact['second2'] = contact2['second']
-                            combined_list.append(contact)
-                            break
-        contact_list = combined_list
+    contact_list = data_availability_obj.get_get_contacts_for_2_session_gap_epoch_splits(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
+                                                                                         event_type='CNTDWN', sub_event_type='CNTDWN',
+                                                                                         epoch_subset=EPOCH_SUBSET, second_epoch_subset=OTHER_EPOCH_SUBSET)
 
     # make a dictionary og integer subject id's
     subject_ids = dict()
@@ -325,6 +307,10 @@ if __name__ == '__main__':
             rep_pcors[digit_1, difit_2] = (v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
     visualize_rdms(np.expand_dims(rep_pcors, axis=0), title='full vector relative representation correlation')
 
+
+
+
+    # EXAMPLE ON GENERATING SPLITS
     # # print('collecting statistics')
     # # for split_id in tqdm.tqdm(range(1, NUM_SPLITS)):
     # #     split_data = consistant_random_grouping(data_mat, pindex=split_id, axis=1)
@@ -344,104 +330,6 @@ if __name__ == '__main__':
     # #         plt.show(block=False)
     # #         plt.pause(0.1)
     # # visualize_rdms(rdm_results)
-    #
-    #
-    #
-    # # generating a single rdm from all the data
-    # # rdm = generate_rdm(np.expand_dims(data_mat, axis=0), rdm_size, pre_ignore, delta_time_smple, ses=[0, 1])
-    # # visualize_rdms(rdm)
-    #
-    #
-    # # NOW DO RELATIVE REPRASENTATION ANALISYS
-    # # A RELATIVE REPRESENTATION IS A LINE IN THE "SELF" RDM (MAYBE EXCLUDING THE DIAGONAL)
-    #
-    # # rdm results per split
-    # #
-    # PADDING = False
-    # #
-    # rdm_results = np.zeros((2, 2, NUM_SPLITS, rdm_size, rdm_size))
-    # print('now making in-session rdm''s to generate relative representations')
-    # for split_id in tqdm.tqdm(range(1, NUM_SPLITS)):
-    #     split_data = consistant_random_grouping(data_mat, pindex=split_id, axis=1, padding=PADDING)
-    #     split_data = np.array(split_data) # axes: {contact group, session, contact (within group), time)
-    #     for sess in range(2):
-    #         rdms = generate_rdm(split_data, rdm_size, pre_ignore, delta_time_smple, ses=[sess, sess])
-    #         rdm_results[0, sess, split_id] = rdms[0]
-    #         rdm_results[1, sess, split_id] = rdms[1]
-    # #
-    # # #acc_split = acc_split.reshape(2, 2, acc_split.shape[2] * acc_split.shape[3], NUM_SPLITS)
-    # # fig, ax = plt.subplots(2, 1, sharex=True)
-    # # for i in range(2):
-    # #     for split_id in range(1, 9):
-    # #         ax[i].plot(acc_split.reshape(2, 2, acc_split.shape[2] * acc_split.shape[3], NUM_SPLITS)[0, i, :, split_id] + (split_id - 4) / 25, label=str(split_id))
-    # #     ax[i].plot(acc_split.reshape(2, 2, acc_split.shape[2] * acc_split.shape[3], NUM_SPLITS)[0, i, :].mean(axis=-1), linewidth=4, label='avg')
-    # #     ax[i].legend()
-    # # acc_split = acc_split.mean(axis=-1)
-    # # plt.show()
-    # # rdm_results = [generate_rdm(acc_split.transpose((1, 0, 2, 3)), rdm_size, pre_ignore, delta_time_smple, ses=[0, 1]),
-    # #                generate_rdm(acc_split.transpose((1, 0, 2, 3)), rdm_size, pre_ignore, delta_time_smple, ses=[0, 1])]
-    # # rdm_results = np.expand_dims(np.array((rdm_results[0][0], rdm_results[0][1])), axis=0)
-    # #
-    # visualize_rdms(rdm_results[0, 0:1], title='RDMS for early session')
-    # visualize_rdms(rdm_results[0, 1:2], title='RDMS for subsequent session')
-    # rdm_results = np.array(rdm_results).transpose((1, 0, 2, 3))
-    # rdm_results = np.concatenate((rdm_results, rdm_results), axis=1)
-    # NUM_SPLITS = 1
-    #
-    # # #
-    # # # RDM's from avg. vectors instead of average of RDM's'
-    # # rdms = generate_rdm(np.expand_dims(split_data.mean(axis=2), axis=2), rdm_size, pre_ignore, delta_time_smple, ses=[sess, sess])
-    # # visualize_rdms(rdms[0], title='RDMS for early session')
-    # # visualize_rdms(rdms[1], title='RDMS for subsequent session')
-    # # print('here')
-    # # #
-    #
-    # # relreps = np.zeros((2, 2 * NUM_SPLITS, rdm_size, rdm_size))
-    # # # remove the 1 correlation between a digit and itself
-    # # for i in range(rdm_size):
-    # #     relreps[:, :, i, :i] = rdm_results[:, :, i, :i]
-    # #     relreps[:, :, i, i:] = rdm_results[:, :, i, i+1:]
-    # # remove the before countdown and after countdown
-    # # relreps = relreps[:, :, 1:-1, 1:-1]
-    # #relreps = rdm_results[:, :, 1:-1, 1:-1]
-    # relreps = rdm_results[:, :, :, 1:-1]
-    #
-    # rep_pcors = np.zeros((2 * NUM_SPLITS, rdm_size, rdm_size))
-    # for i_split in range(2 * NUM_SPLITS):
-    #     for digit_1 in range(12):
-    #         for difit_2 in range(12):
-    #             v1, v2 = relreps[0, i_split, digit_1], relreps[1, i_split, difit_2]
-    #             rep_pcors[i_split, digit_1, difit_2] = (v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
-    # # for i_split in range(2 * NUM_SPLITS):
-    # #     rep_pcors[i_split] = (relreps[0, i_split] @ relreps[1, i_split].T) / np.sqrt(((relreps[0, i_split] @ relreps[0, i_split].T) * (relreps[1, i_split] @ relreps[1, i_split].T) + 1e-12))
-    # visualize_rdms(rep_pcors, title='relative representation p-correlations')
-    #
-    # # now use the average relative representation
-    # rep_pcors = np.zeros((rdm_size, rdm_size))
-    # relreps = relreps.mean(axis=1)
-    # for digit_1 in range(12):
-    #     for difit_2 in range(12):
-    #         v1, v2 = relreps[0, digit_1], relreps[1, difit_2]
-    #         rep_pcors[digit_1, difit_2] = (v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
-    # visualize_rdms(np.expand_dims(rep_pcors, axis=0), title='using average of relative representation among splits')
-    #
-    # # now just use a single vector, no splits
-    # rdm0 = generate_rdm(np.expand_dims(data_mat, axis=0), rdm_size, pre_ignore, delta_time_smple, ses=[0, 0])
-    # rdm1 = generate_rdm(np.expand_dims(data_mat, axis=0), rdm_size, pre_ignore, delta_time_smple, ses=[1, 1])
-    # visualize_rdms(rdm0, title='RDM for early session')
-    # visualize_rdms(rdm1, title='RDM RDMS for subsequent session')
-    # relreps = np.zeros((2, 12, 10))
-    # relreps[0] = rdm0[:, :, 1:-1]
-    # relreps[1] = rdm1[:, :, 1:-1]
-    # rep_pcors = np.zeros((rdm_size, rdm_size))
-    # for digit_1 in range(12):
-    #     for difit_2 in range(12):
-    #         v1, v2 = relreps[0, digit_1], relreps[1, difit_2]
-    #         rep_pcors[digit_1, difit_2] = (v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
-    # visualize_rdms(np.expand_dims(rep_pcors, axis=0), title='full vector relative representation correlation')
-    #
-    # print('here')
-
 
 
 

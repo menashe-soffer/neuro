@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 import datetime
+import tqdm
 
 from path_utils import get_subject_list, get_paths
 from event_reader import event_reader
@@ -238,6 +239,37 @@ class data_availability:
                 suitable_contacts.append(contact_data)
 
         return suitable_session_pairs, suitable_contacts
+
+
+
+
+    def get_get_contacts_for_2_session_gap_epoch_splits(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None, epoch_subset=None, second_epoch_subset=None):
+
+        _, contact_list = self.get_contacts_for_2_session_gap(min_timegap_hrs=min_timegap_hrs, max_timegap_hrs=max_timegap_hrs,
+                                                              event_type=event_type, sub_event_type=sub_event_type, epoch_subset=epoch_subset)
+        if second_epoch_subset is not None:
+            _, contact_list2 = self.get_contacts_for_2_session_gap(min_timegap_hrs=min_timegap_hrs, max_timegap_hrs=max_timegap_hrs,
+                                                                   event_type=event_type, sub_event_type=sub_event_type, epoch_subset=second_epoch_subset)
+            # TBD find intersect of two lists
+            combined_list = []
+            rplc_pattrn_1, rplc_pattern2 = '_subset-' + str(epoch_subset), '_subset-' + str(second_epoch_subset)
+            for i_cntct, contact in tqdm.tqdm(enumerate(contact_list)):
+                # check if the same contact apears in the second list
+                exist2 = False
+                for i_cntct2, contact2 in enumerate(contact_list2):
+                    if contact['subject'] == contact2['subject']:
+                        if contact['name'] == contact2['name']:
+                            ok1 = contact['first'].replace(rplc_pattrn_1, rplc_pattern2) == contact2['first']
+                            ok2 = contact['second'].replace(rplc_pattrn_1, rplc_pattern2) == contact2['second']
+                            if ok1 and ok2:
+                                contact['first2'] = contact2['first']
+                                contact['second2'] = contact2['second']
+                                combined_list.append(contact)
+                                break
+            contact_list = combined_list
+
+        return contact_list
+
 
 
     # def get_avail_evoked_ave_files(self, major_event, sub_event):
