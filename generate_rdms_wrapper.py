@@ -40,7 +40,17 @@ def consistant_random_grouping(data, num_groups=2, pindex=2, axis=0, padding=Fal
 
 
 
-def pierson(x, y):
+def pierson(x, y, remove_nans=False):
+
+    if remove_nans:
+        rmv_cols = np.concatenate((np.argwhere(np.isnan(x)).flatten(), np.argwhere(np.isnan(y)).flatten()))
+        if rmv_cols.size > 0:
+            x, y = np.copy(x), np.copy(y)
+            rmv_cols = np.sort(np.unique(rmv_cols))
+            while rmv_cols.size > 0:
+                x = np.concatenate((x[:rmv_cols[0]], x[rmv_cols[0]+1:]))
+                y = np.concatenate((y[:rmv_cols[0]], y[rmv_cols[0]+1:]))
+                rmv_cols = rmv_cols[1:] - 1
 
     x1, y1 = x - x.mean(), y - y.mean()
     return (x1 * y1).sum() / (np.linalg.norm(x1) * np.linalg.norm(y1) + 1e-16)
@@ -287,7 +297,8 @@ def relative_codes(cmat, first=0, last=-1, remove_diag=True, normalize=False):
             code[i_cw] = code[i_cw] / code[i_cw, i_cw]
 
     if remove_diag:
-        code -= np.diag(np.diag(code))
+        for i in range(num_cw):
+            code[i, i] = np.nan
 
     return code[:, first:last]
 
@@ -338,6 +349,15 @@ def selects_contacts_by_periodicity(contact_list, fs, period_sec=1, show=False):
 
 
 
+
+
+
+
+
+
+
+
+
 if __name__ == '__main__':
 
     V_SAMP_PER_SEC = 4
@@ -345,16 +365,17 @@ if __name__ == '__main__':
     SHOW_TIME_PER_CONTACT = False
     #NUM_SPLITS = 500#1250
     ACTIVE_CONTACTS_ONLY = False
-    AUTO_OR_CROSS_ACTIVATION = "CROSS"  # "AUTO": generate session rdm from single epoch set (diagonal = 1); "CROSS": cross-correlate two epoch sets
+    AUTO_OR_CROSS_ACTIVATION = "AUTO"  # "AUTO": generate session rdm from single epoch set (diagonal = 1); "CROSS": cross-correlate two epoch sets
     EPOCH_SUBSET = 0#None#
     OTHER_EPOCH_SUBSET = 1# if AUTO_OR_CROSS_ACTIVATION == "CROSS" else EPOCH_SUBSET# None#for making self-session rdms
     MIN_TGAP, MAX_TGAP = 72, 96#60, 160#
-    SELECT_CONTACTS_BY_PERIODICITY = False
+    SELECT_CONTACTS_BY_PERIODICITY = 0 # 0: ignore periodicity, 1: select periodic contacts, -1: select NON-periodic contacts
     CONTACT_SPLIT = None # None: use all, 0: even contacts only, 1: odd contacts only
     PROCESS_QUADS = False
     if PROCESS_QUADS:
         V_SAMP_PER_SEC = V_SAMP_PER_SEC * 4
         CORR_WINDOW_SEC = CORR_WINDOW_SEC / 4
+
 
     data_availability_obj = data_availability()
     contact_list = data_availability_obj.get_get_contacts_for_2_session_gap_epoch_splits(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
@@ -375,10 +396,11 @@ if __name__ == '__main__':
     contact_list = [contact_list[i] for i in np.argwhere(keep).flatten()]
     data_mat = np.concatenate((np.expand_dims(data_mat, axis=1), np.expand_dims(data_mat2, axis=1)), axis=1)[:, :, keep]
 
-    if SELECT_CONTACTS_BY_PERIODICITY:
+    if SELECT_CONTACTS_BY_PERIODICITY != 0:
         pmask = selects_contacts_by_periodicity(contact_list=contact_list, fs=16, period_sec=1, show=False)
         #pmask = np.logical_not(pmask)
         keep = pmask[0] * pmask[1]
+        keep = np.logical_not(keep) if SELECT_CONTACTS_BY_PERIODICITY < 0 else keep
         data_mat = data_mat[:, :, keep]
 
     # THE DIMENSIONS OF THE DATA MAT ARE: (session, epoch_group, contact, time_bin)
@@ -480,8 +502,6 @@ if __name__ == '__main__':
         csac = calc_rdm(data_mat[:, 0], rdm_size, pre_ignore, delta_time_smple)
         visualize_rdms(np.expand_dims(csac, axis=0), title='cross-session correlation of Activity vectors (sbst {})'.format(i_sbst+1), show_hists=False, show_bars=False, show=False)
 
-
-
     if  PROCESS_QUADS:
         R0 = relative_codes(rdm0, first=0, last=4, remove_diag=True, normalize=False)
         R1 = relative_codes(rdm1, first=0, last=4, remove_diag=True, normalize=False)
@@ -496,9 +516,9 @@ if __name__ == '__main__':
 
     rep_pcors = np.zeros((rdm_size, rdm_size))
     for digit_1 in range(rdm_size):
-        for difit_2 in range(rdm_size):
-            v1, v2 = R0[digit_1], R1[difit_2]
-            rep_pcors[digit_1, difit_2] = pierson (v1, v2) #(v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
+        for digit_2 in range(rdm_size):
+            v1, v2 = R0[digit_1], R1[digit_2]
+            rep_pcors[digit_1, digit_2] = pierson (v1, v2, remove_nans=True) #(v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
     visualize_rdms(np.expand_dims(rep_pcors, axis=0), title='full vector relative representation correlation', show_hists=False, show_bars=False, show=True)
 
 
