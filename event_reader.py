@@ -56,13 +56,166 @@ class event_reader:
 
         return countdowns
 
+    def get_recalls(self, random_start=False, max_duration=None):
+
+        recalls = []
+        rec_start_idxs = np.argwhere(self.df['trial_type'] == 'REC_START').flatten()
+        rec_end_idxs = np.argwhere(self.df['trial_type'] == 'REC_END').flatten()
+        rec_word_idxs = np.argwhere((self.df['trial_type'] == 'REC_WORD') + (self.df['trial_type'] == 'REC_WORD_VV')).flatten()
+        for i_rec, (start_idx, stop_idx) in enumerate(zip(rec_start_idxs, rec_end_idxs)):
+            event = dict()
+            line = self.df.iloc[start_idx]
+            event['onset'] = line['onset']
+            event['onset sample'] = line['sample']
+            event['interim events'] = None
+            for i1 in range(start_idx + 1, stop_idx):
+                line = self.df.iloc[i1]
+                event_line = '{} \t time {:6.1}  sample {}'.format(line['trial_type'], line['onset'], line['sample'])
+                event['interim events'] = [event_line] if event['interim events'] is None else event['interim events'] + [event_line]
+            line = self.df.iloc[stop_idx]
+            event['end'] = line['onset']
+            event['end sample'] = line['sample']
+            if max_duration is not None:
+                event['original boundaries'] = {'onset': event['onset'], 'onset sample': event['onset sample'], 'end': event['end'], 'end sample': event['end sample']}
+                margin = event['end'] - event['onset'] - max_duration
+                if random_start:
+                    if margin > 0:
+                        dstart = np.random.uniform(low=0, high=margin)
+                    else:
+                        dstart = 0
+                dend = margin - dstart if margin > 0 else 0
+                event['onset'] += dstart
+                event['end'] -= dend
+                event['onset sample'] += int(dstart * 500)
+                event['end sample'] -= int(dend * 500)
+            else:
+                assert not random_start # random start must have max_duration, which actually becomes target duration
+            recalls.append(event)
+
+        return recalls
+
+    def get_distracts(self, random_start=False, max_duration=None):
+
+        dstrcts = []
+        dstrct_start_idxs = np.argwhere(self.df['trial_type'] == 'DISTRACT_START').flatten()
+        dstrct_end_idxs = np.argwhere(self.df['trial_type'] == 'DISTRACT_END').flatten()
+        for i_dstrct, (start_idx, stop_idx) in enumerate(zip(dstrct_start_idxs, dstrct_end_idxs)):
+            event = dict()
+            line = self.df.iloc[start_idx]
+            event['onset'] = line['onset']
+            event['onset sample'] = line['sample']
+            event['interim events'] = None
+            for i1 in range(start_idx + 1, stop_idx):
+                line = self.df.iloc[i1]
+                event_line = '{} \t time {:6.1}  sample {}'.format(line['trial_type'], line['onset'], line['sample'])
+                event['interim events'] = [event_line] if event['interim events'] is None else event['interim events'] + [event_line]
+            line = self.df.iloc[stop_idx]
+            event['end'] = line['onset']
+            event['end sample'] = line['sample']
+            if max_duration is not None:
+                event['original boundaries'] = {'onset': event['onset'], 'onset sample': event['onset sample'], 'end': event['end'], 'end sample': event['end sample']}
+                margin = event['end'] - event['onset'] - max_duration
+                if random_start:
+                    if margin > 0:
+                        dstart = np.random.uniform(low=0, high=margin)
+                    else:
+                        dstart = 0
+                dend = margin - dstart if margin > 0 else 0
+                event['onset'] += dstart
+                event['end'] -= dend
+                event['onset sample'] += int(dstart * 500)
+                event['end sample'] -= int(dend * 500)
+            else:
+                assert not random_start # random start must have max_duration, which actually becomes target duration
+            dstrcts.append(event)
+
+        return dstrcts
+
+    def get_rests(self, random_start=False, max_duration=None):
+
+        # rests usualy apear between orient and lists, between distract and recalls, and after rec
+        rests = []
+        orients = self.get_orients()
+        lists = self.get_list_events()
+        distracts = self.get_distracts()
+        recalls = self.get_recalls()
+        all_onsets = np.array(self.df['onset'])
+
+        rec_start_idxs = np.argwhere(self.df['trial_type'] == 'REC_START').flatten()
+        prelim_rest_onsets, prelim_rest_ends = [], []
+
+        # between orients and lists
+        orient_ends = np.array([e['end'] for e in orients])
+        list_onsets = np.array([e['onset'] for e in lists])
+        for orient_end in orient_ends:
+            next_list_onset = list_onsets[list_onsets > orient_end]
+            if next_list_onset.size > 0:
+                next_list_onset = next_list_onset[0]
+                gap = next_list_onset - orient_end
+                if gap < 10:
+                    prelim_rest_onsets.append(orient_end)
+                    prelim_rest_ends.append(next_list_onset)
+
+        # between distract and recalls
+        distract_ends = np.array([e['end'] for e in distracts])
+        recall_onsets = np.array([e['onset'] for e in recalls])
+        for distract_end in distract_ends:
+            next_recall_onset = recall_onsets[recall_onsets > distract_end]
+            if next_recall_onset.size > 0:
+                next_recall_onset = next_recall_onset[0]
+                gap = next_recall_onset - distract_end
+                if gap < 25:
+                    prelim_rest_onsets.append(distract_end)
+                    prelim_rest_ends.append(next_recall_onset)
+
+        # after recs
+        recall_ends = np.array([e['end'] for e in recalls])
+        for recall_end in recall_ends:
+            idx = np.argwhere(recall_end == all_onsets).squeeze()
+            if idx < self.df.shape[0] - 1:
+                next_event = self.df.iloc[idx + 1]
+                #print(recall_end, next_event['trial_type'], next_event['onset'], next_event['onset'] - recall_end)
+                prelim_rest_onsets.append(recall_end)
+                prelim_rest_ends.append(next_event['onset'])
+
+        onset_idxs, end_idxs = [], []
+        for t_onset, t_end in zip(prelim_rest_onsets, prelim_rest_ends):
+            idx_onset = np.argwhere(t_onset == all_onsets).squeeze()
+            idx_end = np.argwhere(t_end == all_onsets).squeeze()
+            try:
+                idx_end = idx_end[0] if idx_end.size > 1 else idx_end
+                if idx_end - idx_onset > 1:
+                    gap = t_end - t_onset
+                    mid = t_onset + gap / 2
+                    middle = all_onsets[idx_onset + 1:idx_end]
+                    from_onset = middle - t_onset
+                    to_end = t_end = middle
+                    # TBD deal with this
+                else:
+                    onset_idxs.append(idx_onset)
+                    end_idxs.append(idx_end)
+            except:
+                pass
+
+        lengths = np.array([self.df.iloc[end_idx]['onset'] - self.df.iloc[onset_idx]['onset'] for onset_idx, end_idx in zip(onset_idxs, end_idxs)])
+        min_len, max_len = 5, 20
+        mask = (lengths > min_len) * (lengths < max_len)
+
+        for onset_idx, end_idx in zip(np.array(onset_idxs)[mask], np.array(end_idxs)[mask]):
+            event = {'onset': self.df.iloc[onset_idx]['onset'], 'onset sample': self.df.iloc[onset_idx]['sample'], 'interim events': None,
+                     'end': self.df.iloc[end_idx]['onset'], 'end sample': self.df.iloc[end_idx]['sample']}
+            rests.append(event)
+
+
+        return rests
+
 
     def get_orients(self):
 
         orients = []
 
         guess_orient_duration = 8
-        guess_fs = (self.df['sample'][self.df.shape[0]] - self.df['sample'][0]) / (self.df.onset[self.df.shape[0]] - self.df.onset[0])
+        guess_fs = (self.df['sample'][self.df.shape[0] - 1] - self.df['sample'][0]) / (self.df.onset[self.df.shape[0] - 1] - self.df.onset[0])
 
         orient_start_idxs = np.argwhere(self.df['trial_type'] == 'ORIENT_START').squeeze()
         orient_end_idxs = np.argwhere(self.df['trial_type'] == 'ORIENT_END').squeeze()

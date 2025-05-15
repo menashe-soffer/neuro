@@ -269,13 +269,28 @@ def generate_epoched_version(path, mne_copy, event_obj, create_new=True, event_n
         epoching_events = event_obj.get_orients()
         description = 'ORIENT'
         sub_description, sub_events = None, None
-        tmin, tmax = -2.5, 9 + 2.5
+        tmin, tmax = -2.5-2, 9 + 2.5+2
     if event_name == 'list':
         epoching_events = event_obj.get_list_events()
         description = 'LIST'
         sub_events = event_obj.get_word_events()
         sub_description = 'WORD'
         tmin, tmax = -2.5, 30.5 + 2.5
+    if event_name == 'recall':
+        epoching_events = event_obj.get_recalls(random_start=True, max_duration=12)
+        description = 'RECALL'
+        sub_description, sub_events = None, None
+        tmin, tmax = -2.5, 9 + 2.5
+    if event_name == 'dstrct':
+        epoching_events = event_obj.get_distracts(random_start=True, max_duration=12)
+        description = 'DSTRCT'
+        sub_description, sub_events = None, None
+        tmin, tmax = -2.5, 9 + 2.5
+    if event_name == 'rest':
+        epoching_events = event_obj.get_rests(random_start=True, max_duration=12)
+        description = 'REST'
+        sub_description, sub_events = None, None
+        tmin, tmax = -2.5, 9 + 2.5
 
     event_type = EVENT_TYPES[description]
     sub_event_type = None if sub_description == None else EVENT_TYPES[sub_description]
@@ -327,11 +342,33 @@ def check_if_files_exist(src_path, event_names, force_override, verbose=True):
     return exist_mask, events_to_process
 
 
+def psd_wrapper(raw_obj):
+
+    sfreq = raw_obj.info['sfreq']
+    n_fft = 2024
+    raw_clean = raw_obj.copy()
+    for onset, duration, desc in zip(raw_obj.annotations.onset,
+                                     raw_obj.annotations.duration,
+                                     raw_obj.annotations.description):
+        if desc.upper().startswith('BAD'):
+            start_sample = int(onset * sfreq)
+            stop_sample = int((onset + duration) * sfreq)
+            start_sample =int(np.floor(start_sample / (n_fft / 2)) * n_fft / 2)
+            stop_sample = int(np.ceil(stop_sample / (n_fft / 2)) * n_fft / 2)
+            ch_to_clear = np.argwhere([desc[4:] == c for c in raw_clean.ch_names]).squeeze()
+            raw_clean._data[ch_to_clear, start_sample:stop_sample] = 0.0  # Zero out
+
+    # Now compute PSD on the zeroed version
+    psd = raw_clean.compute_psd(method='welch', fmin=0.5, fmax=sfreq / 2, verbose=False, reject_by_annotation=False, n_fft=n_fft)
+    evoked = mne.EvokedArray(psd.data, psd.info, tmin=0.)
+
+    return evoked
+
 
 FORCE_OVERRIDE = False
 from tqdm import tqdm
 fail_list = []
-events_to_process = ['random', 'cntdwn', 'list']#, 'orient'] #orient has a bug' need to troubleshoot
+events_to_process = ['orient', 'dstrct', 'recall', 'cntdwn', 'list', 'rest'] #orient has a bug' need to troubleshoot
 for subject in tqdm(subject_list):
     paths = path_utils.get_paths(BASE_FOLDER, subject=subject, mode='bipolar')
     for path in paths:
@@ -351,6 +388,12 @@ for subject in tqdm(subject_list):
             if read_success:
                 for event_name in events_to_process_for_session:
                     try:
+                        #
+                        psd = psd_wrapper(mne_copy)
+                        psd_fname = path['signals'].replace(BASE_FOLDER, PROC_FOLDER).replace('ieeg', 'PSD').replace('.edf', '_ave.fif')
+                        os.makedirs(os.path.dirname(psd_fname), exist_ok=True)
+                        psd.save(psd_fname, overwrite=FORCE_OVERRIDE)
+                        #
                         generate_epoched_version(path, mne_copy=mne_copy, event_obj=event_obj, create_new=FORCE_OVERRIDE, event_name=event_name)
                     except:
                             fail_list.append(path['signals'] + ' : ' + event_name)

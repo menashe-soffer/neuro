@@ -179,6 +179,21 @@ class data_availability:
         with open(os.path.join(base_folder, fixed_data_filename), 'rb') as fd:
             self.data = pickle.load(fd)
 
+    def __bipolar_contact_additional_data(self, contact_name, contact_details):
+
+        names = contact_name.split('-')
+        ext_data = []
+        for name in names:
+            try:
+                ext_data.append(contact_details[name])
+                ext_data[-1]['name'] = name
+            except:
+                ext_data.append({'region': '', 'coords': None, 'name': name})
+
+        return ext_data
+
+
+
 
     def get_contacts_for_2_session_gap(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None, epoch_subset=None):
 
@@ -202,7 +217,7 @@ class data_availability:
                 for i2 in range(i1+1, num_sessions):
                     if suitability_mat[i1, i2]:
                         pair = {'subject': subject, 'first': keys[i1], 'second': keys[i2],
-                                'delta_hrs': timegap_matrix_hrs[i1, i2], 'contacts': subject_data['bipolar_names']}
+                                'delta_hrs': timegap_matrix_hrs[i1, i2], 'contacts': subject_data['bipolar_names'], 'contacts_details': subject_data['electrodes by name']}
                         suitable_session_pairs.append(pair)
                         suitability_mat[i1, :], suitability_mat[:, i1], suitability_mat[i2, :], suitability_mat[:, i2] = False, False, False, False
 
@@ -236,6 +251,7 @@ class data_availability:
         for pair in suitable_session_pairs:
             for contact in pair['contacts']:
                 contact_data = {'subject': pair['subject'], 'name': contact, 'first': pair['first'], 'second': pair['second'], 'delta_hrs': pair['delta_hrs']}
+                contact_data['location'] = self.__bipolar_contact_additional_data(contact, pair['contacts_details'])
                 suitable_contacts.append(contact_data)
 
         return suitable_session_pairs, suitable_contacts
