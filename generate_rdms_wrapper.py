@@ -104,7 +104,7 @@ def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True,
         #plt.show()
 
     # generating the correlation histograms
-    bin_boundaries = np.linspace(start=rdms.min(), stop=rdms.max(), num=36 if data_mat.shape[1] < 600 else 72)
+    bin_boundaries = np.linspace(start=rdms.min(), stop=rdms.max(), num=36)# if data_mat.shape[1] < 600 else 72)
     bins = (bin_boundaries[:-1] + bin_boundaries[1:]) / 2
     hist_0_0, hist_0_n, hist_1_1, hist_1_n, hist_n_n, hist_n_m = \
         np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size)
@@ -162,11 +162,13 @@ def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True,
             havg[i, :i] = 0
         sns.heatmap(np.round(havg, decimals=2), vmin=-1, vmax=1, ax=ax_folded, annot=True, square=True, cbar=False)
 
-        if show:
-            plt.show()
 
 
-def read_data_single_two_sessions_single_epoch(contact_list, v_samp_per_sec, active_contacts_only=False, slct=['first', 'second'], cmprs=True):
+    if show:
+        plt.show()
+
+
+def read_data_single_two_sessions_single_epoch(contact_list, v_samp_per_sec, active_contacts_only=False, esel=0, cmprs=True):
 
     id_vector = np.zeros(len(contact_list), dtype=int)
     # resolution_sec = 0.5
@@ -179,8 +181,8 @@ def read_data_single_two_sessions_single_epoch(contact_list, v_samp_per_sec, act
     active_contact_list = []
     active_contact_mask = np.zeros(len(contact_list), dtype=bool)
     for i_cntct, contact in enumerate(contact_list):
-        if (running_first != contact[slct[0]]) or (running_second != contact[slct[1]]):
-            running_first, running_second = contact[slct[0]], contact[slct[1]]
+        if (running_first != contact['first'][esel]) or (running_second != contact['second'][esel]):
+            running_first, running_second = contact['first'][esel], contact['second'][esel]
             running_subject_id = subject_ids[contact['subject']]
             first_data = mne.read_evokeds(running_first, verbose=False)[0]
             # first_data.apply_baseline((-0.5, -0.1))
@@ -244,9 +246,9 @@ def estimate_periodiciy(x, fs, period_sec, ax=None):
     # xx = np.copy(x[win[0]:win[-1]])
     global DTRND_FIR, SMTH_FIR
     if SMTH_FIR is None:
-        SMTH_FIR = scipy.signal.firls(int(fs / 2) + 1,
-                                      [0, 0.4 * period_sec / fs, 0.8 * period_sec / fs,
-                                       4.2 * exp_k / (win[1] - win[0]), 4.5 * exp_k / (win[1] - win[0]), 1],
+        SMTH_FIR = scipy.signal.firls(max(int(fs / 2) + 1, 5),
+                                      [0, min(0.4 * period_sec / fs, 0.4), min(0.8 * period_sec / fs, 0.5),
+                                       min(4.2 * exp_k / (win[1] - win[0]), 0.8), min(4.5 * exp_k / (win[1] - win[0]), 0.9), 1],
                                       [0, 0, 1, 1, 0, 0])
         fdisp, rdisp = scipy.signal.freqz(SMTH_FIR, 1)
         plt.plot(fdisp, 10 * np.log10(np.real(rdisp * np.conj(rdisp)) + 1e-6))
@@ -349,49 +351,14 @@ def selects_contacts_by_periodicity(contact_list, fs, period_sec=1, show=False):
 
 
 
+def do_analysis_for_two_epoch_sets(contact_list, esel0, esel1,
+                                   V_SAMP_PER_SEC, SHOW_TIME_PER_CONTACT, ACTIVE_CONTACTS_ONLY,
+                                   CORR_WINDOW_SEC, AUTO_OR_CROSS_ACTIVATION,
+                                   CONTACT_SPLIT, PROCESS_QUADS, SHOW=True):
 
 
-
-
-
-
-
-
-
-if __name__ == '__main__':
-
-    V_SAMP_PER_SEC = 4
-    CORR_WINDOW_SEC = 1
-    SHOW_TIME_PER_CONTACT = False
-    #NUM_SPLITS = 500#1250
-    ACTIVE_CONTACTS_ONLY = False
-    AUTO_OR_CROSS_ACTIVATION = "AUTO"  # "AUTO": generate session rdm from single epoch set (diagonal = 1); "CROSS": cross-correlate two epoch sets
-    EPOCH_SUBSET = 0#None#
-    OTHER_EPOCH_SUBSET = 1# if AUTO_OR_CROSS_ACTIVATION == "CROSS" else EPOCH_SUBSET# None#for making self-session rdms
-    MIN_TGAP, MAX_TGAP = 72, 96#60, 160#
-    SELECT_CONTACTS_BY_PERIODICITY = 0 # 0: ignore periodicity, 1: select periodic contacts, -1: select NON-periodic contacts
-    CONTACT_SPLIT = None # None: use all, 0: even contacts only, 1: odd contacts only
-    PROCESS_QUADS = False
-    if PROCESS_QUADS:
-        V_SAMP_PER_SEC = V_SAMP_PER_SEC * 4
-        CORR_WINDOW_SEC = CORR_WINDOW_SEC / 4
-
-
-    data_availability_obj = data_availability()
-    contact_list = data_availability_obj.get_get_contacts_for_2_session_gap_epoch_splits(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
-                                                                                         event_type='CNTDWN', sub_event_type='CNTDWN',
-                                                                                         epoch_subset=EPOCH_SUBSET, second_epoch_subset=OTHER_EPOCH_SUBSET)
-
-    # make a dictionary og integer subject id's
-    subject_ids = dict()
-    id = 0
-    for contact in contact_list:
-        if not contact['subject'] in subject_ids.keys():
-            subject_ids[contact['subject']] = id
-            id += 1
-
-    data_mat, active_contact_mask, _ = read_data_single_two_sessions_single_epoch(contact_list, v_samp_per_sec=V_SAMP_PER_SEC, active_contacts_only=ACTIVE_CONTACTS_ONLY, cmprs=False)
-    data_mat2, active_contact_mask2, _ = read_data_single_two_sessions_single_epoch(contact_list, v_samp_per_sec=V_SAMP_PER_SEC, active_contacts_only=ACTIVE_CONTACTS_ONLY, slct=['first2', 'second2'], cmprs=False)
+    data_mat, active_contact_mask, _ = read_data_single_two_sessions_single_epoch(contact_list, v_samp_per_sec=V_SAMP_PER_SEC, active_contacts_only=ACTIVE_CONTACTS_ONLY, esel=esel0, cmprs=False)
+    data_mat2, active_contact_mask2, _ = read_data_single_two_sessions_single_epoch(contact_list, v_samp_per_sec=V_SAMP_PER_SEC, active_contacts_only=ACTIVE_CONTACTS_ONLY, esel=esel1, cmprs=False)
     keep = active_contact_mask * active_contact_mask2
     contact_list = [contact_list[i] for i in np.argwhere(keep).flatten()]
     data_mat = np.concatenate((np.expand_dims(data_mat, axis=1), np.expand_dims(data_mat2, axis=1)), axis=1)[:, :, keep]
@@ -414,7 +381,7 @@ if __name__ == '__main__':
     if AUTO_OR_CROSS_ACTIVATION == 'AUTO':
         data_mat[:, 1] = data_mat[:, 0]
 
-    if SHOW_TIME_PER_CONTACT:
+    if SHOW_TIME_PER_CONTACT and SHOW:
         for i in range(data_mat.shape[2]):
             if i % 20 == 0:
                 figc, axc = plt.subplots(4, 5, figsize=(12, 8), sharex=True, sharey=True)
@@ -422,11 +389,11 @@ if __name__ == '__main__':
                 fig, ax = plt.subplots(4, 5, figsize=(12, 8), sharex=True, sharey=True)
             i_ax = i % 20
             #
-            tmp1, a1 = estimate_periodiciy(data_mat[0, 0, i], V_SAMP_PER_SEC)
-            tmp2, a2 = estimate_periodiciy(data_mat[0, 1, i], V_SAMP_PER_SEC)
+            tmp1, a1, _ = estimate_periodiciy(data_mat[0, 0, i], V_SAMP_PER_SEC, 1)
+            tmp2, a2, _ = estimate_periodiciy(data_mat[0, 1, i], V_SAMP_PER_SEC, 1)
             selbld0 = (max(a1, a2) > 0.2) or (a1 + a2 > 0.32)
-            tmp3, a3 = estimate_periodiciy(data_mat[1, 0, i], V_SAMP_PER_SEC)
-            tmp4, a4 = estimate_periodiciy(data_mat[1, 1, i], V_SAMP_PER_SEC)
+            tmp3, a3, _ = estimate_periodiciy(data_mat[1, 0, i], V_SAMP_PER_SEC, 1)
+            tmp4, a4, _ = estimate_periodiciy(data_mat[1, 1, i], V_SAMP_PER_SEC, 1)
             selbld1 = (max(a3, a4) > 0.2) or (a3 + a4 > 0.32)
             #
             ax.flatten()[i_ax].plot(data_mat[0, 0, i], linewidth=0.5+selbld0)
@@ -451,14 +418,15 @@ if __name__ == '__main__':
 
 
     # show the signals
-    fig, ax = plt.subplots(4, 1, sharex=True, sharey=True)
-    for i in range(2):
-        ax[i].plot(data_mat[0, i])
-        ax[i].set_ylabel('early\nsession')
-        ax[2+i].plot(data_mat[1, i])
-        ax[2+i].set_ylabel('succeeding\nsession')
-    plt.suptitle(str(data_mat.shape[2]) + '   contacts')
-    plt.show()
+    if SHOW:
+        fig, ax = plt.subplots(4, 1, sharex=True, sharey=True)
+        for i in range(2):
+            ax[i].plot(data_mat[0, i, :, :])
+            ax[i].set_ylabel('early\nsession')
+            ax[2+i].plot(data_mat[1, i, :, :])
+            ax[2+i].set_ylabel('succeeding\nsession')
+        plt.suptitle(str(data_mat.shape[2]) + '   contacts')
+        plt.show()
 
     # NOW DO THE RDM ANALYSIS
     pre_ignore = 0#V_SAMP_PER_SEC # 1 second in the begining
@@ -494,13 +462,15 @@ if __name__ == '__main__':
 
     rdm0 = calc_rdm(data_mat[0], rdm_size, pre_ignore, delta_time_smple)
     rdm1 = calc_rdm(data_mat[1], rdm_size, pre_ignore, delta_time_smple)
-    visualize_rdms(np.expand_dims(rdm0, axis=0), title=' early session', show_hists=False, show=False)
-    visualize_rdms(np.expand_dims(rdm1, axis=0), title=' subsequent session', show_hists=False, show=False)
+    if SHOW:
+        visualize_rdms(np.expand_dims(rdm0, axis=0), title=' early session', show_hists=False, show=False)
+        visualize_rdms(np.expand_dims(rdm1, axis=0), title=' subsequent session', show_hists=False, show=False)
 
     # cross_session activity correlation
     for i_sbst in range(2 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 1):
-        csac = calc_rdm(data_mat[:, 0], rdm_size, pre_ignore, delta_time_smple)
-        visualize_rdms(np.expand_dims(csac, axis=0), title='cross-session correlation of Activity vectors (sbst {})'.format(i_sbst+1), show_hists=False, show_bars=False, show=False)
+        csac = calc_rdm(data_mat[:, i_sbst], rdm_size, pre_ignore, delta_time_smple)
+        if SHOW:
+            visualize_rdms(np.expand_dims(csac, axis=0), title='cross-session correlation of Activity vectors (sbst {})'.format(i_sbst+1), show_hists=False, show_bars=False, show=False)
 
     if  PROCESS_QUADS:
         R0 = relative_codes(rdm0, first=0, last=4, remove_diag=True, normalize=False)
@@ -509,10 +479,99 @@ if __name__ == '__main__':
         R0 = relative_codes(rdm0, first=1, remove_diag=True, normalize=False)
         R1 = relative_codes(rdm1, first=1, remove_diag=True, normalize=False)
 
+
+    return rdm_size, rdm0, rdm1, csac, R0, R1
+
+
+
+if __name__ == '__main__':
+
+    V_SAMP_PER_SEC = 1
+    CORR_WINDOW_SEC = 1
+    SHOW_TIME_PER_CONTACT = False
+    #NUM_SPLITS = 500#1250
+    ACTIVE_CONTACTS_ONLY = False
+    AUTO_OR_CROSS_ACTIVATION = "CROSS"  # "AUTO": generate session rdm from single epoch set (diagonal = 1); "CROSS": cross-correlate two epoch sets
+    EPOCH_SUBSET = 'e0-e5'#
+    OTHER_EPOCH_SUBSET = 'e6-e11' if AUTO_OR_CROSS_ACTIVATION == "CROSS" else EPOCH_SUBSET# None#for making self-session rdms
+    AVG_MANY_EPOCHS = ['e0-e0', 'e1-e1', 'e2-e2', 'e3-e3', 'e4-e4', 'e5-e5']
+    MIN_TGAP, MAX_TGAP = 72, 96#60, 160#10, 500#
+    SELECT_CONTACTS_BY_PERIODICITY = 0 # 0: ignore periodicity, 1: select periodic contacts, -1: select NON-periodic contacts
+    CONTACT_SPLIT = None # None: use all, 0: even contacts only, 1: odd contacts only
+    PROCESS_QUADS = False
+    event_type = 'CNTDWN' # one of: 'CNTDWN', 'RECALL', 'DSTRCT', 'REST'
+    #
+    if PROCESS_QUADS:
+        V_SAMP_PER_SEC = V_SAMP_PER_SEC * 4
+        CORR_WINDOW_SEC = CORR_WINDOW_SEC / 4
+    assert (AUTO_OR_CROSS_ACTIVATION == "CROSS") or (not AVG_MANY_EPOCHS)
+
+
+    data_availability_obj = data_availability()
+    epoch_subsets =  [EPOCH_SUBSET, OTHER_EPOCH_SUBSET] if not AVG_MANY_EPOCHS else AVG_MANY_EPOCHS
+    contact_list = data_availability_obj.get_get_contacts_for_2_session_gap_epoch_splits(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
+                                                                                         event_type=event_type, sub_event_type=event_type,
+                                                                                         epoch_subsets=epoch_subsets)
+
+    # # temporary code: filter contacts by region
+    # #
+    # revised_contact_list = []
+    # for contact in contact_list:
+    #     r0 = contact['location'][0]['region']
+    #     r1 = contact['location'][1]['region']
+    #     ok0 = (r0.find('lingual') > -1) or (r0.find('occipital') > -1)#
+    #     ok1 = (r1.find('lingual') > -1) or (r1.find('occipital') > -1)#
+    #     if (ok0 and ok1):
+    #         revised_contact_list.append(contact)
+    # contact_list = revised_contact_list
+    # #
+
+
+    # make a dictionary og integer subject id's
+    subject_ids = dict()
+    id = 0
+    for contact in contact_list:
+        if not contact['subject'] in subject_ids.keys():
+            subject_ids[contact['subject']] = id
+            id += 1
+
+
     # for i in range(rdm_size):
     #     print('\n', i)
     #     print(rdm0[i])
     #     print(R0[i])
+
+    pair_cnt = 0
+    for i_sbst0 in range(len(epoch_subsets) - 1):
+        for i_sbst1 in range(i_sbst0 + 1, len(epoch_subsets)):
+
+            rdm_size_, rdm0_, rdm1_, csac_, R0_, R1_ = do_analysis_for_two_epoch_sets(contact_list, i_sbst0, i_sbst1,
+                                                                                      V_SAMP_PER_SEC, SHOW_TIME_PER_CONTACT, ACTIVE_CONTACTS_ONLY, CORR_WINDOW_SEC,
+                                                                                      AUTO_OR_CROSS_ACTIVATION, CONTACT_SPLIT, PROCESS_QUADS, SHOW=False)
+            if pair_cnt == 0:
+                rdm_size, rdm0, rdm1, csac, R0, R1 = rdm_size_, rdm0_, rdm1_, csac_, R0_, R1_
+            else:
+                rdm0 += rdm0_
+                rdm1 += rdm1_
+                csac += csac_
+                R0 += R0_
+                R1 += R1_
+            pair_cnt += 1
+            print('pair no. {},  {} {}'.format(pair_cnt, epoch_subsets[i_sbst0], epoch_subsets[i_sbst1]))
+
+    rdm0 /= pair_cnt
+    rdm1 /= pair_cnt
+    csac /= pair_cnt
+    R0 /= pair_cnt
+    R1 /= pair_cnt
+
+    visualize_rdms(np.expand_dims(rdm0, axis=0), title=' early session ', show_hists=False, show=False)
+    visualize_rdms(np.expand_dims(rdm1, axis=0), title=' subsequent session', show_hists=False, show=False)
+    for i_sbst in range(2 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 1):
+        visualize_rdms(np.expand_dims(csac, axis=0),
+                       title='cross-session correlation of Activity vectors (sbst {})'.format(i_sbst + 1),
+                       show_hists=False, show_bars=False, show=False)
+
 
     rep_pcors = np.zeros((rdm_size, rdm_size))
     for digit_1 in range(rdm_size):
@@ -522,7 +581,36 @@ if __name__ == '__main__':
     visualize_rdms(np.expand_dims(rep_pcors, axis=0), title='full vector relative representation correlation', show_hists=False, show_bars=False, show=True)
 
 
+    # statistics
+    tmp0, tmp1, tmpcs, tmprel = rdm0[1:-1, 1:-1], rdm1[1:-1, 1:-1], csac[1:-1, 1:-1], rep_pcors[1:-1, 1:-1]
+    off_diag = np.concatenate((tmp0[~np.eye(tmp0.shape[0],dtype=bool)], tmp1[~np.eye(tmp1.shape[0],dtype=bool)]))
+    on_diag = np.concatenate((np.diag(tmp0), np.diag(tmp1)))
+    print('\n\t\t\t\t\t\tdiagonal\t\t\toff diag')
+    print('within session:\t\t {:4.2f} (dev {:4.2f}) \t{:4.2f} (dev {:4.2f}) '.format(on_diag.mean(), on_diag.std(), off_diag.mean(), off_diag.std()))
+    off_diag = tmpcs[~np.eye(tmpcs.shape[0],dtype=bool)]
+    on_diag = np.diag(csac)
+    print('across sessions:\t {:4.2f} (dev {:4.2f}) \t{:4.2f} (dev {:4.2f}) '.format(on_diag.mean(), on_diag.std(), off_diag.mean(), off_diag.std()))
+    off_diag = tmprel[~np.eye(tmprel.shape[0],dtype=bool)]
+    on_diag = np.diag(tmprel)
+    print('relative :\t\t\t {:4.2f} (dev {:4.2f}) \t{:4.2f} (dev {:4.2f}) '.format(on_diag.mean(), on_diag.std(), off_diag.mean(), off_diag.std()))
 
+
+    # show the diagonals
+    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+    ax.bar(np.arange(csac.shape[0]) - 0.2, np.diag(csac), width=0.2, label='activations')
+    ax.bar(np.arange(rep_pcors.shape[0]) + 0.2, np.diag(rep_pcors), width=0.2, label='relational codes')
+    ax.grid(True)
+    ax.set_ylim([-0.1, 1.1])
+    ax.legend()
+    if not PROCESS_QUADS:
+        ax.set_xticks(np.arange(12), ['pre\ncnt', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'post\ncnt'])
+    fig.suptitle('correlations')
+    plt.show()
+    #
+    fname = 'C:/Users/menas/OneDrive/Desktop/openneuro/tmpres-sbst'# + str(EPOCH_SUBSET)
+    with open(fname, 'wb') as fd:
+        pickle.dump({'csac': csac, 'rep_pcors': rep_pcors}, fd)
+    #
 
 
     # EXAMPLE ON GENERATING SPLITS

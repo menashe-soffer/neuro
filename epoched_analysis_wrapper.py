@@ -150,7 +150,7 @@ def my_wilcoxon(x, y):
     return np.exp(-z/2)
 
 
-def calculate_p_values(evoked, pre_intvl=[-0.5, -0.1], post_intval=[0.1, 0.6],
+def calculate_p_values(evoked, evoked_sem=None, pre_intvl=[-0.5, -0.1], post_intval=[0.1, 0.6],
                        display_post_cursor=6, display_seperator_pitch=None, display_title=None, show=True):
 
     p_values = np.zeros(len(evoked.ch_names))
@@ -171,6 +171,11 @@ def calculate_p_values(evoked, pre_intvl=[-0.5, -0.1], post_intval=[0.1, 0.6],
                 fig, ax = plt.subplots(4, 5, figsize=(12, 8), sharex=True, sharey=True)
                 fig.suptitle(epoched_file)
                 figs.append(fig)
+            if evoked_sem is not None:
+                ax.flatten()[i_ax].fill_between(evoked.times[150:-150],
+                                                evoked._data[i_ch][150:-150] - evoked_sem._data[i_ch][150:-150],
+                                                evoked._data[i_ch][150:-150] + evoked_sem._data[i_ch][150:-150],
+                                                color='grey', alpha=0.5)
             ax.flatten()[i_ax].plot(evoked.times[150:-150], evoked._data[i_ch][150:-150],
                                     linewidth=0.5 if evoked.ch_names[i_ch] in evoked.info['bads'] else 2,
                                     c='r' if response_mask[i_ch] else 'b')
@@ -206,7 +211,7 @@ def add_synthetic_sub_annotations(epoched, event_type='CNTDWN', sub_event_type='
 
 
 
-def norm_show_save(evoked, epoched_file, proc_params, event_type, normalize=True, SHOW=True, SHOW_ONLY=True, i_subset=None):
+def norm_show_save(evoked, evoked_sem, epoched_file, proc_params, event_type, normalize=True, SHOW=True, SHOW_ONLY=True, i_subset=None):
 
     if normalize:
         norm_mask = (evoked.times >= -0.5) * (evoked.times <= -0.05)
@@ -215,15 +220,16 @@ def norm_show_save(evoked, epoched_file, proc_params, event_type, normalize=True
             evoked._data[i_chan] /= (nf + 1e-64)
 
     if i_subset is not None:
-        epoched_file = epoched_file.replace('ieeg-epo', 'subset-' + str(i_subset) + '-ieeg-epo' )
+        epoched_file = epoched_file.replace('ieeg-epo', str(i_subset) + '-ieeg-epo' )
 
-    p_values, increase_mask, _ = calculate_p_values(evoked.copy(), pre_intvl=proc_params['pre_intvl'], post_intval=proc_params['post_intvl'],
+    p_values, increase_mask, _ = calculate_p_values(evoked.copy(), evoked_sem, pre_intvl=proc_params['pre_intvl'], post_intval=proc_params['post_intvl'],
                                                     display_post_cursor=proc_params['display_post_cursor'], display_seperator_pitch=proc_params['display_seperator_pitch'],
                                                     display_title=epoched_file, show=SHOW)
     if not SHOW_ONLY:
         evoked_file = epoched_file.replace('ieeg-epo', '-' + event_type + '-ieeg-evoked-ave')
         with mne.use_log_level('WARNING'):
-            evoked.save(evoked_file, overwrite=True)
+            # evoked.save(evoked_file, overwrite=True)
+            mne.write_evokeds(evoked_file, [evoked, evoked_sem], overwrite=True)
 
 
 
@@ -271,43 +277,60 @@ def process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, 
     epoched_gamma.selection = np.arange(epoched_gamma.selection.size)
 
 
-    evoked = epoched_gamma.average('data')
-    norm_show_save(evoked, epoched_file, proc_params, event_type, normalize=True, SHOW=SHOW, SHOW_ONLY=SHOW_ONLY)
+    # evoked = epoched_gamma.average('data')
+    #
+    edata = epoched_gamma.get_data()
+    mean, sem = edata.mean(axis=0), edata.std(axis=0) / np.sqrt(edata.shape[0])
+    evoked = mne.EvokedArray(mean, epoched_gamma.info, tmin=epoched_gamma.tmin)
+    evoked.comment = 'average'
+    evoked_sem = mne.EvokedArray(sem, epoched_gamma.info, tmin=epoched_gamma.tmin)
+    evoked_sem.comment = 'sem'
+    #
+    norm_show_save(evoked, evoked_sem, epoched_file, proc_params, event_type, normalize=True, SHOW=SHOW, SHOW_ONLY=SHOW_ONLY)
 
     if subsets is not None:
         for i_subset, subset in enumerate(subsets):
             if len(set(subset) & set(epoched_gamma.selection)) == len(subset): # all needed instances in subset
-                evoked_sbst = epoched_gamma[subset].average('data')
-                norm_show_save(evoked_sbst, epoched_file, proc_params, event_type, normalize=True, SHOW=SHOW, SHOW_ONLY=SHOW_ONLY, i_subset=i_subset)
+                #evoked_sbst = epoched_gamma[subset].average('data')
+                #
+                edata = epoched_gamma[subset].get_data()
+                mean, sem = edata.mean(axis=0), edata.std(axis=0) / np.sqrt(edata.shape[0])
+                evoked_sbst = mne.EvokedArray(mean, epoched_gamma.info, tmin=epoched_gamma.tmin)
+                evoked_sbst.comment = 'average'
+                evoked_sem = mne.EvokedArray(sem, epoched_gamma.info, tmin=epoched_gamma.tmin)
+                evoked_sem.comment = 'sem'
+                #
+                norm_show_save(evoked_sbst, evoked_sem, epoched_file, proc_params, event_type, normalize=True, SHOW=SHOW, SHOW_ONLY=SHOW_ONLY, i_subset='e{}-e{}'.format(subset[0], subset[-1]))
             else:
                 logging.warning('epoched for set {} missing in {}'.format(i_subset, epoched_file))
 
     #
     # sub event
-    mask = np.array([d == event_type for d in epoched.annotations.description]).flatten()
-    events_for_sub_epoching = np.zeros((mask.sum(), 3))
-    events_for_sub_epoching[:, 0] = epoched.annotations.onset[mask]
+    if sub_event_type is not None:
+        mask = np.array([d == event_type for d in epoched.annotations.description]).flatten()
+        events_for_sub_epoching = np.zeros((mask.sum(), 3))
+        events_for_sub_epoching[:, 0] = epoched.annotations.onset[mask]
 
-    # generate new epoched mne object with the sub events epoched
-    fs = epoched_gamma.info['sfreq']
-    epoched_data = epoched_gamma.get_data()
-    major_duration = (epoched_data.shape[-1] - 1) / fs
-    base_time = 0
-    time_shift = -epoched_gamma.times[0]
-    semi_raw = mne.io.RawArray(np.concatenate(epoched_data, axis=1), epoched.info, verbose=False)
-    for major_epoch in annotations:
-        sub_idxs = np.argwhere([e[-1] == sub_event_type for e in major_epoch]).flatten()
-        sub_events_inner = np.array([major_epoch[i][:2] for i in sub_idxs])
-        semi_raw.annotations.append(sub_events_inner[:, 0] + time_shift + base_time, sub_events_inner[:, 1], sub_event_type)
-        base_time += major_duration
-    events_for_epoching = np.zeros((len(semi_raw.annotations), 3), dtype=int)
-    events_for_epoching[:, 0] = (semi_raw.annotations.onset * fs).astype(int)
-    events_for_epoching[:, 2] = 0
-    # BIG TBD: KKEP BAD EVENTS, ASSIGN EVENT TYPES TO DISTINGUISH
-    sub_epoched = mne.Epochs(semi_raw, events=events_for_epoching, tmin=-1, tmax=sub_events_inner[:, 1].max() + 1, baseline=None, preload=True, verbose=False)
-    #normalize_all_epochs(sub_epoched)
-    sub_evoked = sub_epoched.average('data')
-    norm_show_save(sub_evoked, epoched_file.replace(event_type, sub_event_type), proc_params_sub, sub_event_type, normalize=True, SHOW=SHOW, SHOW_ONLY=SHOW_ONLY)
+        # generate new epoched mne object with the sub events epoched
+        fs = epoched_gamma.info['sfreq']
+        epoched_data = epoched_gamma.get_data()
+        major_duration = (epoched_data.shape[-1] - 1) / fs
+        base_time = 0
+        time_shift = -epoched_gamma.times[0]
+        semi_raw = mne.io.RawArray(np.concatenate(epoched_data, axis=1), epoched.info, verbose=False)
+        for major_epoch in annotations:
+            sub_idxs = np.argwhere([e[-1] == sub_event_type for e in major_epoch]).flatten()
+            sub_events_inner = np.array([major_epoch[i][:2] for i in sub_idxs])
+            semi_raw.annotations.append(sub_events_inner[:, 0] + time_shift + base_time, sub_events_inner[:, 1], sub_event_type)
+            base_time += major_duration
+        events_for_epoching = np.zeros((len(semi_raw.annotations), 3), dtype=int)
+        events_for_epoching[:, 0] = (semi_raw.annotations.onset * fs).astype(int)
+        events_for_epoching[:, 2] = 0
+        # BIG TBD: KKEP BAD EVENTS, ASSIGN EVENT TYPES TO DISTINGUISH
+        sub_epoched = mne.Epochs(semi_raw, events=events_for_epoching, tmin=-1, tmax=sub_events_inner[:, 1].max() + 1, baseline=None, preload=True, verbose=False)
+        #normalize_all_epochs(sub_epoched)
+        sub_evoked = sub_epoched.average('data')
+        norm_show_save(sub_evoked, None, epoched_file.replace(event_type, sub_event_type), proc_params_sub, sub_event_type, normalize=True, SHOW=SHOW, SHOW_ONLY=SHOW_ONLY)
 
     if SHOW:
         plt.show()
@@ -324,7 +347,21 @@ def get_params_for_event_type(type_to_process):
         proc_params = dict({'pre_intvl': [-0.5, -0.1], 'post_intvl': [0.1, 0.6], 'display_post_cursor': 30, 'display_seperator_pitch': 2.6})
         proc_params_sub = dict({'pre_intvl': [-0.4, -0.1], 'post_intvl': [0.1, 0.4], 'display_post_cursor': 3, 'display_seperator_pitch': 2.6})
     if TYPE_TO_PROCESS == 'orient':
-        assert 'orient not implemented yet'
+        file_type, event_type, sub_event_type = 'orient', 'ORIENT', None#
+        proc_params = dict({'pre_intvl': [-0.5, -0.1], 'post_intvl': [0.1, 0.6], 'display_post_cursor': 10, 'display_seperator_pitch': 2.5})
+        proc_params_sub = None
+    if TYPE_TO_PROCESS == 'dstrct':
+        file_type, event_type, sub_event_type = 'dstrct', 'DSTRCT', None#
+        proc_params = dict({'pre_intvl': [-0.5, -0.1], 'post_intvl': [0.1, 0.6], 'display_post_cursor': 10, 'display_seperator_pitch': 2.5})
+        proc_params_sub = None
+    if TYPE_TO_PROCESS == 'recall':
+        file_type, event_type, sub_event_type = 'recall', 'RECALL', None#
+        proc_params = dict({'pre_intvl': [-0.5, -0.1], 'post_intvl': [0.1, 0.6], 'display_post_cursor': 10, 'display_seperator_pitch': 2.5})
+        proc_params_sub = None
+    if TYPE_TO_PROCESS == 'rest':
+        file_type, event_type, sub_event_type = 'rest', 'REST', None#
+        proc_params = dict({'pre_intvl': [-0.5, -0.1], 'post_intvl': [0.1, 0.6], 'display_post_cursor': 10, 'display_seperator_pitch': 2.5})
+        proc_params_sub = None
 
     return file_type, event_type, sub_event_type, proc_params, proc_params_sub
 
@@ -337,7 +374,7 @@ if __name__ == '__main__':
 
     SHOW, SHOW_ONLY = False, False
     assert SHOW or (not SHOW_ONLY)
-    TYPE_TO_PROCESS = 'cntdwn'# 'list'# 'orient'#
+    TYPE_TO_PROCESS = 'cntdwn'# 'list'#'rest'#'recall'#'dstrct'#'orient'#
     file_type, event_type, sub_event_type, proc_params, proc_params_sub = get_params_for_event_type(TYPE_TO_PROCESS)
 
     list = find_epoched_subject(base_folder=base_folder, epoched_folder=epoched_folder, type=file_type)
@@ -347,7 +384,8 @@ if __name__ == '__main__':
     for subject_item in tqdm.tqdm(list):
         for epoched_file in subject_item['epoched']:
             try:
-                process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, proc_params_sub, SHOW, SHOW_ONLY, subsets=[range(0, 6), range(6, 12)])
+                process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, proc_params_sub, SHOW, SHOW_ONLY,
+                                     subsets=[range(0, 1), range(1, 2), range(2, 3), range(3, 4), range(4, 5), range(5, 6)])#, range(0, 2), range(0, 4), range(0, 8)])
             except:
                 fail_list.append(epoched_file)
                 logging.warning(epoched_file + '  :   FAILED')

@@ -258,7 +258,7 @@ def generate_epoched_version(path, mne_copy, event_obj, create_new=True, event_n
         epoching_events = event_obj.get_countdowns()
         description = 'CNTDWN'
         sub_description = 'DIGIT'
-        tmin, tmax = -2.5, 10.5 + 2.5
+        tmin, tmax = -2.5-2.5, 10.5 + 2.5+2.5
         # generating the DIGIT annotations
         sub_events = []
         for cntdwn_event in epoching_events:
@@ -345,7 +345,7 @@ def check_if_files_exist(src_path, event_names, force_override, verbose=True):
 def psd_wrapper(raw_obj):
 
     sfreq = raw_obj.info['sfreq']
-    n_fft = 2024
+    n_fft = 256
     raw_clean = raw_obj.copy()
     for onset, duration, desc in zip(raw_obj.annotations.onset,
                                      raw_obj.annotations.duration,
@@ -386,15 +386,15 @@ for subject in tqdm(subject_list):
                 fail_list.append(path['signals'])
                 read_success = False
             if read_success:
+                #
+                psd = psd_wrapper(mne_copy)
+                psd_fname = path['signals'].replace(BASE_FOLDER, PROC_FOLDER).replace('ieeg', 'PSD').replace('.edf', '_ave.fif')
+                os.makedirs(os.path.dirname(psd_fname), exist_ok=True)
+                psd.save(psd_fname, overwrite=FORCE_OVERRIDE)
+                #
                 for event_name in events_to_process_for_session:
                     try:
-                        #
-                        psd = psd_wrapper(mne_copy)
-                        psd_fname = path['signals'].replace(BASE_FOLDER, PROC_FOLDER).replace('ieeg', 'PSD').replace('.edf', '_ave.fif')
-                        os.makedirs(os.path.dirname(psd_fname), exist_ok=True)
-                        psd.save(psd_fname, overwrite=FORCE_OVERRIDE)
-                        #
-                        generate_epoched_version(path, mne_copy=mne_copy, event_obj=event_obj, create_new=FORCE_OVERRIDE, event_name=event_name)
+                         generate_epoched_version(path, mne_copy=mne_copy, event_obj=event_obj, create_new=FORCE_OVERRIDE, event_name=event_name)
                     except:
                             fail_list.append(path['signals'] + ' : ' + event_name)
                             logging.warning('FAILED TO GENERATE .fif for {} FROM   {}'.format(event_name, path['signals']))

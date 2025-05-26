@@ -228,7 +228,7 @@ class data_availability:
             if epoch_subset is None:
                 pattern = os.path.join(self.processed_folder, 'sub-R*', 'ses-*', event_type, '*bipolar_-' + sub_event_type + '-ieeg-evoked-ave.fif')
             else:
-                pattern = os.path.join(self.processed_folder, 'sub-R*', 'ses-*', event_type, '*subset-{}--'.format(epoch_subset) + sub_event_type + '-ieeg-evoked-ave.fif')
+                pattern = os.path.join(self.processed_folder, 'sub-R*', 'ses-*', event_type, '*bipolar_{}--'.format(epoch_subset) + sub_event_type + '-ieeg-evoked-ave.fif')
             evoked_list = glob.glob(pattern)
             revised_pair_list = []
             for pair in suitable_session_pairs:
@@ -259,27 +259,34 @@ class data_availability:
 
 
 
-    def get_get_contacts_for_2_session_gap_epoch_splits(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None, epoch_subset=None, second_epoch_subset=None):
+
+
+    def get_get_contacts_for_2_session_gap_epoch_splits(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None, epoch_subsets=None):
 
         _, contact_list = self.get_contacts_for_2_session_gap(min_timegap_hrs=min_timegap_hrs, max_timegap_hrs=max_timegap_hrs,
-                                                              event_type=event_type, sub_event_type=sub_event_type, epoch_subset=epoch_subset)
-        if second_epoch_subset is not None:
+                                                              event_type=event_type, sub_event_type=sub_event_type, epoch_subset=epoch_subsets[0])
+
+        for contact in contact_list:
+            contact['first'], contact['second'] = [contact['first']], [contact['second']]
+
+        for i_sbst, second_epoch_subset in enumerate(epoch_subsets[1:]):
+
             _, contact_list2 = self.get_contacts_for_2_session_gap(min_timegap_hrs=min_timegap_hrs, max_timegap_hrs=max_timegap_hrs,
                                                                    event_type=event_type, sub_event_type=sub_event_type, epoch_subset=second_epoch_subset)
             # TBD find intersect of two lists
             combined_list = []
-            rplc_pattrn_1, rplc_pattern2 = '_subset-' + str(epoch_subset), '_subset-' + str(second_epoch_subset)
+            rplc_pattrn_1, rplc_pattern2 = str(epoch_subsets[0]), str(second_epoch_subset)
             for i_cntct, contact in tqdm.tqdm(enumerate(contact_list)):
                 # check if the same contact apears in the second list
                 exist2 = False
                 for i_cntct2, contact2 in enumerate(contact_list2):
                     if contact['subject'] == contact2['subject']:
                         if contact['name'] == contact2['name']:
-                            ok1 = contact['first'].replace(rplc_pattrn_1, rplc_pattern2) == contact2['first']
-                            ok2 = contact['second'].replace(rplc_pattrn_1, rplc_pattern2) == contact2['second']
+                            ok1 = contact['first'][0].replace(rplc_pattrn_1, rplc_pattern2) == contact2['first']
+                            ok2 = contact['second'][0].replace(rplc_pattrn_1, rplc_pattern2) == contact2['second']
                             if ok1 and ok2:
-                                contact['first2'] = contact2['first']
-                                contact['second2'] = contact2['second']
+                                contact['first'].append(contact2['first'])
+                                contact['second'].append(contact2['second'])
                                 combined_list.append(contact)
                                 break
             contact_list = combined_list
