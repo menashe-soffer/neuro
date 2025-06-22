@@ -7,9 +7,12 @@ import mne
 import scipy.signal
 import seaborn as sns
 import tqdm
+import copy
+import sklearn
 
 from data_availability import data_availability
 from epoched_analysis_wrapper import calculate_p_values # SHOULD BE MOVED ELSEWHERE
+from channel_selection import *
 
 
 
@@ -76,14 +79,17 @@ def calc_rdm(data, rdm_size, pre_ignore, delta_time_smple):
 
 
 
-def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True, show_hmaps=True, show=True):
+def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True, show_hmaps=True, show=True, ovrd_bar_scale=None, ovrd_heat_scale=None):
 
     num_splits = rdms.shape[0]
     rdm_size = rdms.shape[-1]
 
     # generating the correlation bars
     if show_bars:
-        ylow, yhigh = min(-0.01, max(-0.1, np.floor(np.quantile(rdms, 0.05) * 10) / 10)), np.ceil(np.quantile(rdms, 0.95) * 10) / 10
+        if ovrd_bar_scale:
+            ylow, yhigh =ovrd_bar_scale[0], ovrd_bar_scale[1]
+        else:
+            ylow, yhigh = min(-0.01, max(-0.1, np.floor(np.quantile(rdms, 0.05) * 10) / 10)), np.ceil(np.quantile(rdms, 0.95) * 10) / 10
         fig_bars, ax_bars = plt.subplots(rdm_size, 1, figsize=(6, 10))
         fig_bars.suptitle(title)
         for t1 in range(rdm_size):
@@ -151,16 +157,21 @@ def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True,
         #plt.show()
 
     if show_hmaps:
+        if ovrd_heat_scale:
+            vmin, vmax = ovrd_heat_scale[0], ovrd_heat_scale[1]
+        else:
+            vmin, vmax = -1, 1
         fig_pc, ax_pc = plt.subplots(1, 1, figsize=(6, 6))
         fig_folded, ax_folded = plt.subplots(1, 1, figsize=(6, 6))
         fig_pc.suptitle('{}\n{} contacts, {} split permutations'.format(title, dst_idx, num_splits))
         fig_folded.suptitle('{}\n{} contacts, {} split permutations'.format(title, dst_idx, num_splits))
-        sns.heatmap(np.round(rdms.mean(axis=0), decimals=2), vmin=-1, vmax=1, ax=ax_pc, annot=True, square=True, cbar=False)
+        xticks, yticks = np.arange(-1, rdms.shape[0] - 1), np.arange(-1, rdms.shape[1] - 1)
+        sns.heatmap(np.round(rdms.mean(axis=0), decimals=2), vmin=vmin, vmax=vmax, ax=ax_pc, annot=True, square=True, cbar=False, xticklabels=xticks, yticklabels=yticks)
         havg = rdms.mean(axis=0)
         havg = (havg + havg.T) / 2
         for i in range(1, rdm_size):
             havg[i, :i] = 0
-        sns.heatmap(np.round(havg, decimals=2), vmin=-1, vmax=1, ax=ax_folded, annot=True, square=True, cbar=False)
+        sns.heatmap(np.round(havg, decimals=2), vmin=vmin, vmax=vmax, ax=ax_folded, annot=True, square=True, cbar=False, xticklabels=xticks, yticklabels=yticks)
 
 
 
@@ -186,15 +197,15 @@ def read_data_single_two_sessions_single_epoch(contact_list, v_samp_per_sec, act
             running_subject_id = subject_ids[contact['subject']]
             first_data = mne.read_evokeds(running_first, verbose=False)[0]
             # first_data.apply_baseline((-0.5, -0.1))
-            first_p_vals, first_increase, _ = calculate_p_values(first_data.copy(), show=False)
+            first_p_vals, first_increase, _ = calculate_p_values(first_data.copy(), show=False, pre_intvl=[-0.95, -0.1], post_intval=[0.1+1*2, 0.6+1*8.5])
             second_data = mne.read_evokeds(running_second, verbose=False)[0]
             # second_data.apply_baseline((-0.5, -0.1))
-            second_p_vals, second_increase, _ = calculate_p_values(second_data.copy(), show=False)
+            second_p_vals, second_increase, _ = calculate_p_values(second_data.copy(), show=False, pre_intvl=[-0.95, -0.1], post_intval=[0.1+1*2, 0.6+1*8.5])
             masks = np.zeros((boundries_sec.size - 1, first_data.times.shape[-1]), dtype=bool)
             for i in range(data_mat.shape[-1]):
                 masks[i] = (first_data.times >= boundries_sec[i]) * (first_data.times < boundries_sec[i + 1])
-            contact_activity_1 = (first_p_vals < 0.05) * first_increase
-            contact_activity_2 = (second_p_vals < 0.05) * second_increase
+            contact_activity_1 = (first_p_vals < 0.05) #* first_increase
+            contact_activity_2 = (second_p_vals < 0.05) #* second_increase
         #
         # now read the data in the requested resolution
         src_idx1 = np.argwhere([contact['name'] == c for c in first_data.ch_names]).squeeze()
@@ -205,7 +216,7 @@ def read_data_single_two_sessions_single_epoch(contact_list, v_samp_per_sec, act
         not_bad2 = not_bad2 and np.any(second_data._data[src_idx2] != 0)  # !!!   PATCH    !!!
         not_bad1 = not_bad1 and np.abs(first_data._data[src_idx1]).max() < 3  # !!!   PATCH    !!!
         not_bad2 = not_bad2 and np.abs(second_data._data[src_idx2]).max() < 3  # !!!   PATCH    !!!
-        contact_is_active = (contact_activity_1[src_idx1] and contact_activity_2[src_idx2])
+        contact_is_active = (contact_activity_1[src_idx1] or contact_activity_2[src_idx2])
         if ((contact_is_active or (not active_contacts_only)) and
                 (src_idx1.size == 1) and (src_idx2.size == 1) and not_bad1 and not_bad2):
             id_in_mat = dst_idx if cmprs else i_cntct
@@ -222,66 +233,6 @@ def read_data_single_two_sessions_single_epoch(contact_list, v_samp_per_sec, act
 
     return data_mat, active_contact_mask, dict({'active_contact_list': active_contact_list, 'p_values_first': first_p_vals, 'p_values_second': second_p_vals})
 
-
-
-
-global DTRND_FIR, SMTH_FIR
-DTRND_FIR, SMTH_FIR = None, None
-
-
-def check_periodicity(x, fs, period_sec):
-    win = [3 * fs, 10 * fs]
-    xx = x[win[0]:win[-1]]
-    xx = xx - xx.mean()
-    xx = xx.reshape(7, fs)
-    s_ref, s_avg = xx.std(axis=1).mean(), xx.mean(axis=0).std()
-    periodicity_score = s_avg / s_ref
-
-    return periodicity_score
-
-
-def estimate_periodiciy(x, fs, period_sec, ax=None):
-    win = [3 * fs, 10 * fs]
-    exp_k = 2 * (win[1] - win[0]) / (fs * period_sec)
-    # xx = np.copy(x[win[0]:win[-1]])
-    global DTRND_FIR, SMTH_FIR
-    if SMTH_FIR is None:
-        SMTH_FIR = scipy.signal.firls(max(int(fs / 2) + 1, 5),
-                                      [0, min(0.4 * period_sec / fs, 0.4), min(0.8 * period_sec / fs, 0.5),
-                                       min(4.2 * exp_k / (win[1] - win[0]), 0.8), min(4.5 * exp_k / (win[1] - win[0]), 0.9), 1],
-                                      [0, 0, 1, 1, 0, 0])
-        fdisp, rdisp = scipy.signal.freqz(SMTH_FIR, 1)
-        plt.plot(fdisp, 10 * np.log10(np.real(rdisp * np.conj(rdisp)) + 1e-6))
-        plt.show()
-    xx = scipy.signal.filtfilt(SMTH_FIR, 1, x)[win[0]:win[-1]]
-    # xx -= xx.mean()
-    # x = scipy.signal.detrend(x)
-    # exp_k = 2 * xx.size / (fs * period_sec)
-    xx = (xx - xx.mean())  # * np.hamming(xx.size)
-    xx = np.concatenate((np.zeros(int(xx.size / 2)), xx, np.zeros(int(xx.size / 2))))
-    xc = np.convolve(xx, xx, mode='same')
-    xc = (xc - xc.mean()) * np.hanning(xc.size)
-    X = np.abs(np.fft.fft(xc))
-    X = X / np.linalg.norm(x)
-    X = X[:int(x.size / 2)]
-    X = X / X.sum()  # np.linalg.norm(x)
-
-    ave_score = check_periodicity(x, fs, 1)
-
-    mask = np.zeros(X.shape)
-    for octv in range(1, 3 + 1):
-        mask += np.convolve([1, 1, 1], np.sinc(np.arange(mask.size) - octv * exp_k), mode='same')
-
-    if ax is not None:
-        # ax.plot(x, ':b')
-        ax.plot(X, 'r', linewidth=2)
-        idxs = np.argwhere(mask > 0.25).flatten()
-        ax.scatter(idxs, X[idxs], c='r', s=16 * mask[idxs])
-        ax.plot(xx[int(xx.size / 4):-int(xx.size / 4)] * X.max() / xx.max(), 'b', linewidth=0.5)
-        ax.plot(xc * X.max() / xc.max(), 'k:')
-        ax.text(150, 0.6 * X.max(), '{:4.2f}'.format(ave_score))
-
-    return X, (X * mask).sum(), ave_score
 
 
 def relative_codes(cmat, first=0, last=-1, remove_diag=True, normalize=False):
@@ -307,61 +258,56 @@ def relative_codes(cmat, first=0, last=-1, remove_diag=True, normalize=False):
 
 
 
-def selects_contacts_by_periodicity(contact_list, fs, period_sec=1, show=False):
-
-
-    #
-    # PATCH: add no subset to the contact_list
-    for contact in contact_list:
-        tmp = contact['first'].find('subset-')
-        contact['first_base'] = contact['first'][:tmp] + contact['first'][tmp+len('subset---'):]
-        tmp = contact['second'].find('subset-')
-        contact['second_base'] = contact['second'][:tmp] + contact['second'][tmp+len('subset---'):]
-
-    data_mat_for_periodicity, mask, _ = read_data_single_two_sessions_single_epoch(contact_list, v_samp_per_sec=fs, active_contacts_only=False, slct=['first_base', 'second_base'], cmprs=False)
-    assert data_mat_for_periodicity.ndim == 3
-    num_substs, num_contacts, num_samples = data_mat_for_periodicity.shape
-    assert num_substs == 2, 'currently only data with two subsets (data_mat.shape[0] == 2) are supported'
-    periodicity_mask = np.zeros((2, num_contacts), dtype=bool)
-
-    for i_cntct in range(num_contacts):
-        if mask[i_cntct]:
-            for i_sbst in range(num_substs):
-                _, a, b = estimate_periodiciy(data_mat_for_periodicity[i_sbst, i_cntct], fs=fs, period_sec=period_sec)
-                periodicity_mask[i_sbst, i_cntct] = np.sqrt(a * b) > 0.25
-                if show:
-                    if (i_cntct > 0) and (i_cntct % 50 == 0) and (i_sbst == 0):
-                        plt.show()
-                    i_ax = (i_cntct * 2 + i_sbst) % 10
-                    if (i_ax == 0) and (i_sbst == 0):
-                        fig, ax = plt.subplots(5, 4, sharex=False, sharey=False, figsize=(12, 10))
-                        clr = ['c', 'm', 'g', 'r']
-                    ax.flatten()[2*i_ax].plot(np.arange(num_samples) / fs, data_mat_for_periodicity[i_sbst, i_cntct],
-                                            c=clr[i_sbst + 2 * periodicity_mask[i_sbst, i_cntct]], label=str(np.round(100*a, decimals=0)))
-                    estimate_periodiciy(data_mat_for_periodicity[i_sbst, i_cntct], fs=fs, period_sec=period_sec, ax=ax.flatten()[2*i_ax+1])
-                    if True:# i_sbst == num_substs - 1:
-                        ax.flatten()[2*i_ax].grid(True)
-                        ax.flatten()[2*i_ax+1].grid(True)
-                        ax.flatten()[2*i_ax].set_yticks([])
-                        ax.flatten()[2*i_ax+1].set_yticks([])
-                        ax.flatten()[2*i_ax].legend()
-                        ax.flatten()[2 * i_ax].set_ylabel(str(i_cntct))
-
-    return periodicity_mask
-
-
-
 def do_analysis_for_two_epoch_sets(contact_list, esel0, esel1,
                                    V_SAMP_PER_SEC, SHOW_TIME_PER_CONTACT, ACTIVE_CONTACTS_ONLY,
                                    CORR_WINDOW_SEC, AUTO_OR_CROSS_ACTIVATION,
-                                   CONTACT_SPLIT, PROCESS_QUADS, SHOW=True):
+                                   CONTACT_SPLIT, PROCESS_QUADS, tfm=None, SHOW=True):
 
 
     data_mat, active_contact_mask, _ = read_data_single_two_sessions_single_epoch(contact_list, v_samp_per_sec=V_SAMP_PER_SEC, active_contacts_only=ACTIVE_CONTACTS_ONLY, esel=esel0, cmprs=False)
     data_mat2, active_contact_mask2, _ = read_data_single_two_sessions_single_epoch(contact_list, v_samp_per_sec=V_SAMP_PER_SEC, active_contacts_only=ACTIVE_CONTACTS_ONLY, esel=esel1, cmprs=False)
-    keep = active_contact_mask * active_contact_mask2
+    keep = active_contact_mask * active_contact_mask2 if not tfm else tfm.get_contact_mask()
     contact_list = [contact_list[i] for i in np.argwhere(keep).flatten()]
     data_mat = np.concatenate((np.expand_dims(data_mat, axis=1), np.expand_dims(data_mat2, axis=1)), axis=1)[:, :, keep]
+    #
+    if SHOW and tfm:
+        data_mat_show = np.copy(data_mat)
+        data_mat_show = tfm.remove_first_componenets(data=data_mat_show, n=0)
+        for i_ch in range(data_mat_show.shape[2]):
+            if i_ch % 20 == 0:
+                fig, ax = plt.subplots(4, 5, figsize=(16, 12))
+            ax.flatten()[i_ch % 20].plot(data_mat[0, 0, i_ch])
+            ax.flatten()[i_ch % 20].plot(data_mat_show[0, 0, i_ch] + data_mat[0, 0, i_ch].mean() - data_mat_show[0, 0, i_ch].mean())
+            if i_ch % 400 == 399:
+                plt.show()
+        plt.show()
+    #
+    data_mat = tfm.remove_first_componenets(data=data_mat, n=0) if tfm else data_mat
+
+    # #
+    # fig, ax = plt.subplots(2, 2, figsize=(8, 8), sharex=True, sharey=True)
+    # data_mat1 = np.copy(data_mat)
+    # for i1 in range(2):
+    #     for i2 in range(2):
+    #         for i3 in range(data_mat1.shape[2]):
+    #             data_mat1[i1, i2, i3] -=  data_mat1[i1, i2, i3].mean()
+    #             data_mat1[i1, i2, i3] /= data_mat1[i1, i2, i3].std()
+    #         sns.heatmap(data_mat1[i1, i2], ax=ax[i1, i2], vmin=-1.6, vmax=1.6)
+    # plt.show()
+    # #
+
+    # #
+    # fig, ax = plt.subplots(2, 2, figsize=(8, 8), sharex=True, sharey=True)
+    # data_mat1 = np.copy(data_mat)
+    # for i1 in range(2):
+    #     for i2 in range(2):
+    #         for i3 in range(data_mat1.shape[2]):
+    #             data_mat1[i1, i2, i3] -=  data_mat1[i1, i2, i3].mean()
+    #             data_mat1[i1, i2, i3] /= np.linalg.norm(data_mat1[i1, i2, i3])
+    #         c = data_mat1[i1, i2] @  data_mat1[i1, i2].T
+    #         sns.heatmap(c, ax=ax[i1, i2], vmin=-0.25, vmax=0.25)
+    # plt.show()
+    # #
 
     if SELECT_CONTACTS_BY_PERIODICITY != 0:
         pmask = selects_contacts_by_periodicity(contact_list=contact_list, fs=16, period_sec=1, show=False)
@@ -484,12 +430,37 @@ def do_analysis_for_two_epoch_sets(contact_list, esel0, esel1,
 
 
 
+def show_region_distribution(contact_list, title=None):
+
+    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+    sel_regions = [c['location'][0]['region'] for c in contact_list] + [c['location'][1]['region'] for c in contact_list]
+    regions = np.unique(sel_regions)
+    counter = np.zeros(len(regions), dtype=int)
+    for region in sel_regions:
+        region_id = np.argwhere([r == region for r in regions]).squeeze()
+        counter[region_id] += 1
+    reord = np.argsort(counter)
+    counter = counter[reord]
+    regions = [regions[i] for i in reord]
+    ax.bar(regions, 100 * counter / counter.sum())
+    #ax.grid(True)
+    ax.set_xticks(np.arange(len(regions)))  # Explicitly set ticks if needed (though ax.bar often sets them)
+    ax.set_xticklabels(regions, rotation=90, ha='right')
+    fig.tight_layout()
+    if title:
+        fig.suptitle(title)
+
+    return fig
+
+
+
+
+
 if __name__ == '__main__':
 
     V_SAMP_PER_SEC = 1
     CORR_WINDOW_SEC = 1
     SHOW_TIME_PER_CONTACT = False
-    #NUM_SPLITS = 500#1250
     ACTIVE_CONTACTS_ONLY = False
     AUTO_OR_CROSS_ACTIVATION = "CROSS"  # "AUTO": generate session rdm from single epoch set (diagonal = 1); "CROSS": cross-correlate two epoch sets
     EPOCH_SUBSET = 'e0-e5'#
@@ -504,7 +475,7 @@ if __name__ == '__main__':
     if PROCESS_QUADS:
         V_SAMP_PER_SEC = V_SAMP_PER_SEC * 4
         CORR_WINDOW_SEC = CORR_WINDOW_SEC / 4
-    assert (AUTO_OR_CROSS_ACTIVATION == "CROSS") or (not AVG_MANY_EPOCHS)
+    #assert (AUTO_OR_CROSS_ACTIVATION == "CROSS") or (not AVG_MANY_EPOCHS)
 
 
     data_availability_obj = data_availability()
@@ -513,18 +484,18 @@ if __name__ == '__main__':
                                                                                          event_type=event_type, sub_event_type=event_type,
                                                                                          epoch_subsets=epoch_subsets)
 
-    # # temporary code: filter contacts by region
     # #
-    # revised_contact_list = []
-    # for contact in contact_list:
-    #     r0 = contact['location'][0]['region']
-    #     r1 = contact['location'][1]['region']
-    #     ok0 = (r0.find('lingual') > -1) or (r0.find('occipital') > -1)#
-    #     ok1 = (r1.find('lingual') > -1) or (r1.find('occipital') > -1)#
-    #     if (ok0 and ok1):
-    #         revised_contact_list.append(contact)
-    # contact_list = revised_contact_list
+    # temp_list = ['sub-R1065J', 'sub-R1083J', 'sub-R1111M', 'sub-R1112M', 'sub-R1118N', 'sub-R1161E', 'sub-R1168T', 'sub-R1172E', 'sub-R1196N',
+    #              'sub-R1283T', 'sub-R1308T', 'sub-R1315T', 'sub-R1325C', 'sub-R1336T', 'sub-R1338T', 'sub-R1355T', 'sub-R1542J']
+    # revised = []
+    # for c in contact_list:
+    #     if c['subject'] in temp_list:
+    #         revised.append(c)
+    # print(len(contact_list), len(revised))
+    # #assert False
+    # contact_list = revised
     # #
+
 
 
     # make a dictionary og integer subject id's
@@ -541,13 +512,53 @@ if __name__ == '__main__':
     #     print(rdm0[i])
     #     print(R0[i])
 
+    #
+    # SELECT ACTIVE CONTACTS BASED ON ACTIVITY OF TOTAL
+    if ACTIVE_CONTACTS_ONLY:
+        # generate temporary contact list for averages (on which we calulate activity)
+        tmp_contact_list = copy.deepcopy(contact_list)
+        for contact in tmp_contact_list:
+            tmp_first = contact['first'][0].replace('-bipolar_*--CNTDWN', '-bipolar_-CNTDWN')
+            tmp_second = contact['first'][0].replace('-bipolar_*--CNTDWN', '-bipolar_-CNTDWN')
+            contact['first'], contact['second'] = [tmp_first], [tmp_second]
+        # now
+        _, active_contact_mask, _ = read_data_single_two_sessions_single_epoch(tmp_contact_list, v_samp_per_sec=V_SAMP_PER_SEC, active_contacts_only=ACTIVE_CONTACTS_ONLY, esel=0, cmprs=False)
+        _, active_contact_mask2, _ = read_data_single_two_sessions_single_epoch(contact_list, v_samp_per_sec=V_SAMP_PER_SEC, active_contacts_only=ACTIVE_CONTACTS_ONLY, esel=1, cmprs=False)
+        keep = active_contact_mask * active_contact_mask2
+        # the selected contact
+        print('SELECTING {} ACTIVE CONTACTS OUT OF {}'.format(keep.sum(), len(contact_list)))
+        contact_list = [contact_list[i] for i in np.argwhere(keep).flatten()]
+    #
+
+    projector = None#activation_pca(contact_list=contact_list)#
+
+    SELECT_CONTACTS_BY_CORR = False
+    if SELECT_CONTACTS_BY_CORR:
+        data_mat, valid_contact_mask = read_evoked_data_two_sessions(contact_list, 4, esel_list=np.arange(len(epoch_subsets)))
+        mask = select_channels_by_correlation(data_mat, valid_contact_mask, 4, show=False)
+        contact_list = [contact_list[i] for i in np.argwhere(mask).flatten()]
+
+    USE_CONTACT_SELECTION_FROM_FILE = False
+    if USE_CONTACT_SELECTION_FROM_FILE:
+        with open('C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_6d', 'rb') as fd:
+            contact_list_ref = pickle.load(fd)
+        combined_list = []
+        for cid, c in enumerate(contact_list):
+            for rid, r in enumerate(contact_list_ref):
+                #print(c, r)
+                if (c['subject'] == r['subject']) and (c['name'] == r['name']) and (len(c['first']) >= 6) and(len(c['second']) >= 6):
+                    print(c['subject'], c['name'], r['subject'], r['name'], cid, rid, len(combined_list))
+                    combined_list.append(c)
+        contact_list = combined_list[:100]
+
     pair_cnt = 0
-    for i_sbst0 in range(len(epoch_subsets) - 1):
-        for i_sbst1 in range(i_sbst0 + 1, len(epoch_subsets)):
+    csac_list, R0_list, R1_list, rdm0_list, rdm1_list = [], [], [], [], []
+    for i_sbst0 in range(len(epoch_subsets) - (1 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 0)):
+        for i_sbst1 in range(i_sbst0 + 1, len(epoch_subsets)) if AUTO_OR_CROSS_ACTIVATION=='CROSS' else [i_sbst0] :
 
             rdm_size_, rdm0_, rdm1_, csac_, R0_, R1_ = do_analysis_for_two_epoch_sets(contact_list, i_sbst0, i_sbst1,
-                                                                                      V_SAMP_PER_SEC, SHOW_TIME_PER_CONTACT, ACTIVE_CONTACTS_ONLY, CORR_WINDOW_SEC,
-                                                                                      AUTO_OR_CROSS_ACTIVATION, CONTACT_SPLIT, PROCESS_QUADS, SHOW=False)
+                                                                                      V_SAMP_PER_SEC, SHOW_TIME_PER_CONTACT, False, CORR_WINDOW_SEC,
+                                                                                      AUTO_OR_CROSS_ACTIVATION, CONTACT_SPLIT, PROCESS_QUADS, tfm=projector, SHOW=(i_sbst0 + i_sbst1 == 1))
             if pair_cnt == 0:
                 rdm_size, rdm0, rdm1, csac, R0, R1 = rdm_size_, rdm0_, rdm1_, csac_, R0_, R1_
             else:
@@ -558,6 +569,11 @@ if __name__ == '__main__':
                 R1 += R1_
             pair_cnt += 1
             print('pair no. {},  {} {}'.format(pair_cnt, epoch_subsets[i_sbst0], epoch_subsets[i_sbst1]))
+            csac_list.append(csac_)
+            R0_list.append(R0_)
+            R1_list.append(R1_)
+            rdm0_list.append(rdm0_)
+            rdm1_list.append(rdm1_)
 
     rdm0 /= pair_cnt
     rdm1 /= pair_cnt
@@ -565,12 +581,15 @@ if __name__ == '__main__':
     R0 /= pair_cnt
     R1 /= pair_cnt
 
-    visualize_rdms(np.expand_dims(rdm0, axis=0), title=' early session ', show_hists=False, show=False)
-    visualize_rdms(np.expand_dims(rdm1, axis=0), title=' subsequent session', show_hists=False, show=False)
-    for i_sbst in range(2 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 1):
-        visualize_rdms(np.expand_dims(csac, axis=0),
-                       title='cross-session correlation of Activity vectors (sbst {})'.format(i_sbst + 1),
-                       show_hists=False, show_bars=False, show=False)
+show_region_distribution(contact_list, title='{} contacts , delta=T = {} hrs to {} hrs'.format(len(contact_list), event_type, MIN_TGAP, MAX_TGAP))
+#plt.show()
+
+visualize_rdms(np.expand_dims(rdm0, axis=0), title=' early session ', show_hists=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.1, 0.2])
+visualize_rdms(np.expand_dims(rdm1, axis=0), title=' subsequent session', show_hists=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.1, 0.2])
+for i_sbst in range(2 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 1):
+    visualize_rdms(np.expand_dims(csac, axis=0),
+                   title='cross-session correlation of Activity vectors (sbst {})'.format(i_sbst + 1),
+                   show_hists=False, show_bars=False, show=False)
 
 
     rep_pcors = np.zeros((rdm_size, rdm_size))
@@ -579,6 +598,55 @@ if __name__ == '__main__':
             v1, v2 = R0[digit_1], R1[digit_2]
             rep_pcors[digit_1, digit_2] = pierson (v1, v2, remove_nans=True) #(v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
     visualize_rdms(np.expand_dims(rep_pcors, axis=0), title='full vector relative representation correlation', show_hists=False, show_bars=False, show=True)
+
+    # #
+    # # redu everything with lists
+    # csac_list, R0_list, R1_list = np.array(csac_list), np.array(R0_list), np.array(R1_list)
+    # # re-disply activation correlations with error bars
+    # visualize_rdms(np.expand_dims(np.mean(csac_list, axis=0), axis=0),
+    #                title='cross-session correlation of Activity vectors recalculated', show_hists=False, show_bars=False, show=False)
+    # visualize_rdms(np.expand_dims(np.std(csac_list, axis=0), axis=0),
+    #                title='cross-session correlation of Activity vectors recalculated, STDEV', show_hists=False, show_bars=False, show=False)
+    # # no generate rep_pcoers for seperate reps
+    # # partial averagings
+    # if AUTO_OR_CROSS_ACTIVATION == 'CROSS':
+    #     sbgrps = np.array((1, 10, 15, 2, 8, 14, 3, 9, 11, 4, 7, 12, 5, 6, 13)).reshape(5, 3)
+    #     sub_cnt = 5
+    # if AUTO_OR_CROSS_ACTIVATION == 'AUTO':
+    #     sbgrps = np.array((1, 2, 3, 4, 5, 6)).reshape(3, 2)
+    #     sub_cnt = 3
+    # R0_list_, R1_list_ = np.zeros((sub_cnt, R0_list.shape[1], R0_list.shape[2])), np.zeros((sub_cnt, R0_list.shape[1], R0_list.shape[2]))
+    # for i_sub in range(sub_cnt):
+    #     R0_list_[i_sub] = R0_list[sbgrps[i_sub] - 1].mean(axis=0)
+    #     R1_list_[i_sub] = R1_list[sbgrps[i_sub] - 1].mean(axis=0)
+    # R0_list, R1_list = R0_list_, R1_list_
+    #
+    # rep_pcors_list = np.zeros((sub_cnt, rdm_size, rdm_size))
+    # for i_pair in range(sub_cnt):
+    #     for digit_1 in range(rdm_size):
+    #         for digit_2 in range(rdm_size):
+    #             v1, v2 = R0_list[i_pair, digit_1], R1_list[i_pair, digit_2]
+    #             rep_pcors_list[i_pair, digit_1, digit_2] = pierson (v1, v2, remove_nans=True) #(v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
+    # visualize_rdms(np.expand_dims(np.mean(rep_pcors_list, axis=0), axis=0),
+    #                title='RELATIVE REPRESANTATION AVG CORR', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0,1, 0.2], ovrd_heat_scale=[-0.2, 0.3])
+    # visualize_rdms(np.expand_dims(np.std(rep_pcors_list, axis=0), axis=0),
+    #                title='RELATIVE REPRESANTATION STDEV CORR', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0,1, 0.2], ovrd_heat_scale=[-0.2, 0.3])
+    #
+
+    # show the diagonals
+    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+    c_act_avg, c_act_std = np.mean(csac_list, axis=0), np.std(csac_list, axis=0)
+    #c_rep_avg, c_rep_std = np.mean(rep_pcors_list, axis=0), np.std(rep_pcors_list, axis=0)
+    c_rep_avg, c_rep_std = rep_pcors, np.zeros(rep_pcors.shape)
+    ax.bar(np.arange(c_act_avg.shape[0]) - 0.2, np.diag(c_act_avg), width=0.2, label='activations')
+    ax.bar(np.arange(c_act_avg.shape[0]) - 0.2, 2 * np.diag(c_act_std), bottom=np.diag(c_act_avg) - np.diag(c_act_std), width=0.05, color='k')
+    ax.bar(np.arange(c_rep_avg.shape[0]) + 0.2, np.diag(c_rep_avg), width=0.2, label='relational codes')
+    ax.bar(np.arange(c_rep_avg.shape[0]) + 0.2, 2 * np.diag(c_rep_std), bottom=np.diag(c_rep_avg) - np.diag(c_rep_std), width=0.05, color='k')
+    ax.grid(True)
+    ax.set_ylim([-1.1, 1.1])
+    ax.legend()
+    plt.show()
+    #
 
 
     # statistics
@@ -600,7 +668,7 @@ if __name__ == '__main__':
     ax.bar(np.arange(csac.shape[0]) - 0.2, np.diag(csac), width=0.2, label='activations')
     ax.bar(np.arange(rep_pcors.shape[0]) + 0.2, np.diag(rep_pcors), width=0.2, label='relational codes')
     ax.grid(True)
-    ax.set_ylim([-0.1, 1.1])
+    ax.set_ylim([-1.1, 1.1])
     ax.legend()
     if not PROCESS_QUADS:
         ax.set_xticks(np.arange(12), ['pre\ncnt', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'post\ncnt'])

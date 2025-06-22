@@ -243,6 +243,7 @@ class data_availability:
                     pair['first'] = evoked_1
                     pair['second'] = evoked_2
                     revised_pair_list.append(pair)
+            #print([p['subject'] for p in revised_pair_list])
             suitable_session_pairs = revised_pair_list
 
 

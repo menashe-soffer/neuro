@@ -365,10 +365,13 @@ def psd_wrapper(raw_obj):
     return evoked
 
 
+
+
+
 FORCE_OVERRIDE = False
 from tqdm import tqdm
 fail_list = []
-events_to_process = ['orient', 'dstrct', 'recall', 'cntdwn', 'list', 'rest'] #orient has a bug' need to troubleshoot
+events_to_process = ['orient', 'dstrct', 'recall', 'cntdwn', 'list', 'rest']
 for subject in tqdm(subject_list):
     paths = path_utils.get_paths(BASE_FOLDER, subject=subject, mode='bipolar')
     for path in paths:
