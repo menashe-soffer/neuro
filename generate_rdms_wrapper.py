@@ -532,10 +532,10 @@ if __name__ == '__main__':
 
     projector = None#activation_pca(contact_list=contact_list)#
 
-    SELECT_CONTACTS_BY_CORR = False
+    SELECT_CONTACTS_BY_CORR = True
     if SELECT_CONTACTS_BY_CORR:
         data_mat, valid_contact_mask = read_evoked_data_two_sessions(contact_list, 4, esel_list=np.arange(len(epoch_subsets)))
-        mask = select_channels_by_correlation(data_mat, valid_contact_mask, 4, show=False)
+        mask = select_channels_by_correlation(data_mat, valid_contact_mask, 4, show=True)
         contact_list = [contact_list[i] for i in np.argwhere(mask).flatten()]
 
     USE_CONTACT_SELECTION_FROM_FILE = False

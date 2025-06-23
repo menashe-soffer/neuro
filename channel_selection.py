@@ -287,14 +287,17 @@ def select_channels_by_correlation1(data_mat, valid_contact_mask, v_samp_per_sec
 
 def select_channels_by_correlation(data_mat, valid_contact_mask, v_samp_per_sec, show=False):
 
+    cstart, cstop = 1, 11
+
     num_chans = data_mat.shape[2]
-    num_sess, num_epochs, seg_len = data_mat.shape[0], data_mat.shape[1], v_samp_per_sec * 10
+    num_sess, num_epochs, seg_len = data_mat.shape[0], data_mat.shape[1], v_samp_per_sec * (cstop - cstart)
     assert data_mat.shape[1] >= 6
     assert data_mat.shape[1] % 2 == 0
     xcorr_vec = np.zeros((num_sess, num_chans))
+    #xcorr_vec = np.zeros((num_sess, num_chans, 10 * v_samp_per_sec * 2 - 1))
     for i_chan in range(num_chans):
         if valid_contact_mask[i_chan]:
-            chan_data = data_mat[:, :, i_chan, v_samp_per_sec:-v_samp_per_sec]
+            chan_data = data_mat[:, :, i_chan, cstart*v_samp_per_sec:cstop*v_samp_per_sec]
             for i_sess in range(num_sess):
                 for i_epoch in range(num_epochs):
                     chan_data[i_sess, i_epoch] -= chan_data[i_sess, i_epoch].mean()
@@ -302,30 +305,67 @@ def select_channels_by_correlation(data_mat, valid_contact_mask, v_samp_per_sec,
                 for i1 in range(num_epochs - 1):
                     for i2 in range(i1+1, num_epochs):
                         xcorr_vec[i_sess, i_chan] += (chan_data[i_sess, i1] * chan_data[i_sess, i2]).sum()
-            # c0 = chan_data[:, ::2].reshape(num_sess, int(num_epochs * seg_len / 2))
-            # c1 = chan_data[:, 1::2].reshape(num_sess, int(num_epochs * seg_len / 2))
-            # mid = int(num_epochs * seg_len / 2) - 1
-            # # for i_sess in range(num_sess):
-            # #     xcorr_vec[i_sess, i_chan] = np.max(np.convolve(c0[i_sess], c1[i_sess])[mid-1:mid+2])
-            # for i_sess in range(num_sess):
-            #     c0[i_sess] -= c0[i_sess].mean()
-            #     c1[i_sess] -= c1[i_sess].mean()
-            #     xcorr_vec[i_sess, i_chan] = (c0[i_sess] * c1[i_sess]).sum() / (np.linalg.norm(c0[i_sess]) * np.linalg.norm(c1[i_sess]))
-            # #
-            if show and (xcorr_vec[i_chan] > 0.3):
-                fig, ax = plt.subplots(num_sess, 3)
-                for i_sess in range(num_sess):
-                    ax[i_sess, 0].plot(c0[i_sess])
-                    ax[i_sess, 1].plot(c1[i_sess])
-                    ax[i_sess, 2].plot(np.convolve(c0[i_sess], c1[i_sess]))
-                    [ax[i_sess, i].grid(True) for i in range(3)]
-                fig.suptitle('cntct {}  mark={:4.2f}'.format(str(i_chan), xcorr_vec[i_chan]))
-                plt.show()
-            #
-    plt.plot(xcorr_vec.T)
+                        #xcorr_vec[i_sess, i_chan] += np.convolve(chan_data[i_sess, i1, ::-1], chan_data[i_sess, i2])
+
+    xcorr_vec /= num_epochs * (num_epochs - 1) / 2
+
     xcorr_vec_m = np.min(xcorr_vec, axis=0)
-    plt.plot(xcorr_vec_m)
-    plt.show()
+    #xcorr_vec_m = np.min(np.max(xcorr_vec, axis=2), axis=0)
+
+    def calc_xcor_for_chan(data_mat, ch_id, num_sess, num_epochs, v_samp_per_sec, cstart, cstop):
+
+        chan_data = data_mat[:, :, ch_id, cstart*v_samp_per_sec:cstop*v_samp_per_sec]
+        avg_cnt = 0
+        #xcorr_f = np.zeros((num_sess, 10*v_samp_per_sec*2-1))
+        xcorr_f = np.zeros((num_sess, int(chan_data.shape[-1] * 2 -1)))
+        for i_sess in range(num_sess):
+            for i_epoch in range(num_epochs):
+                chan_data[i_sess, i_epoch] -= chan_data[i_sess, i_epoch].mean()
+                chan_data[i_sess, i_epoch] /= np.linalg.norm(chan_data[i_sess, i_epoch])
+            for i1 in range(num_epochs - 1):
+                for i2 in range(i1 + 1, num_epochs):
+                    if avg_cnt == 0:
+                        xcorr_f[i_sess] = np.convolve(chan_data[i_sess, i1, ::-1], chan_data[i_sess, i2])
+                    else:
+                        xcorr_f[i_sess] += np.convolve(chan_data[i_sess, i1, ::-1], chan_data[i_sess, i2])
+                    avg_cnt += 1
+        #xcorr_f = xcorr_f[1] if xcorr_f[0].max() > xcorr_f[1].max() else xcorr_f[0]
+        if xcorr_f[0].max() > xcorr_f[1].max():
+            xcorr_f = xcorr_f[::-1]
+
+        return xcorr_f / (num_epochs * (num_epochs - 1) / 2)
+
+    if show:
+        #plt.plot(xcorr_vec.T)
+        #plt.plot(xcorr_vec_m)
+
+        # now show xcorr for 50 best and 50 worst
+        show_thd_good = np.sort(xcorr_vec_m)[::-1][40]
+        good_sel = np.argwhere(xcorr_vec_m >= show_thd_good).flatten()
+        show_thd_bad = np.sort(xcorr_vec_m[valid_contact_mask])[::-1][-40]
+        bad_sel = np.argwhere((xcorr_vec_m <= show_thd_bad) * valid_contact_mask).flatten()
+        fig_good, ax_good = plt.subplots(5, 8, figsize=(16, 12), sharey=True)
+        fig_good.suptitle('best 40 contacts')
+        fig_bad, ax_bad = plt.subplots(5, 8, figsize=(16, 12), sharey=True)
+        fig_bad.suptitle('worst 40 contacts')
+        span = [xcorr_vec_m.min(), xcorr_vec_m.max()]
+        for i in range(40):
+            ax_good.flatten()[i].grid(True)
+            ax_bad.flatten()[i].grid(True)
+            ax_good.flatten()[i].set_ylim(span)
+            ax_bad.flatten()[i].set_ylim(span)
+            good_xc = calc_xcor_for_chan(data_mat=data_mat, ch_id=good_sel[i], num_sess=num_sess, num_epochs=num_epochs, v_samp_per_sec=v_samp_per_sec, cstart=cstart, cstop=cstop)
+            bad_xc = calc_xcor_for_chan(data_mat=data_mat, ch_id=bad_sel[i], num_sess=num_sess, num_epochs=num_epochs, v_samp_per_sec=v_samp_per_sec, cstart=cstart, cstop=cstop)
+            ax_good.flatten()[i].plot(good_xc[::-1].T)
+            ax_bad.flatten()[i].plot(bad_xc[::-1].T)
+            ax_good.flatten()[i].set_xticks([0, int(good_xc.shape[1] / 2), good_xc.shape[1]  -1])
+            ax_bad.flatten()[i].set_xticks([0, int(bad_xc.shape[1]  / 2), bad_xc.shape[1]  -1])
+            ax_good.flatten()[i].set_ylabel(str(good_sel[i]))
+            ax_bad.flatten()[i].set_ylabel(str(bad_sel[i]))
+            # print('channel {} xc={:4.2f}'.format(good_sel[i], xcorr_vec_m[good_sel[i]]))
+            # print('channel {} xc={:4.2f}'.format(bad_sel[i], xcorr_vec_m[bad_sel[i]]))
+
+        plt.show()
 
     # thd0 = np.sort(xcorr_vec[0])[::-1][100]
     # slct0 = xcorr_vec[0] >= thd0
