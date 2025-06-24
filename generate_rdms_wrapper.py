@@ -165,7 +165,7 @@ def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True,
         fig_folded, ax_folded = plt.subplots(1, 1, figsize=(6, 6))
         fig_pc.suptitle('{}\n{} contacts, {} split permutations'.format(title, dst_idx, num_splits))
         fig_folded.suptitle('{}\n{} contacts, {} split permutations'.format(title, dst_idx, num_splits))
-        xticks, yticks = np.arange(-1, rdms.shape[0] - 1), np.arange(-1, rdms.shape[1] - 1)
+        xticks, yticks = np.arange(-1, rdms.shape[1] - 1), np.arange(-1, rdms.shape[2] - 1)
         sns.heatmap(np.round(rdms.mean(axis=0), decimals=2), vmin=vmin, vmax=vmax, ax=ax_pc, annot=True, square=True, cbar=False, xticklabels=xticks, yticklabels=yticks)
         havg = rdms.mean(axis=0)
         havg = (havg + havg.T) / 2
@@ -412,11 +412,17 @@ def do_analysis_for_two_epoch_sets(contact_list, esel0, esel1,
         visualize_rdms(np.expand_dims(rdm0, axis=0), title=' early session', show_hists=False, show=False)
         visualize_rdms(np.expand_dims(rdm1, axis=0), title=' subsequent session', show_hists=False, show=False)
 
-    # cross_session activity correlation
-    for i_sbst in range(2 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 1):
-        csac = calc_rdm(data_mat[:, i_sbst], rdm_size, pre_ignore, delta_time_smple)
-        if SHOW:
-            visualize_rdms(np.expand_dims(csac, axis=0), title='cross-session correlation of Activity vectors (sbst {})'.format(i_sbst+1), show_hists=False, show_bars=False, show=False)
+    # # cross_session activity correlation
+    # for i_sbst in range(2 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 1):
+    #     if i_sbst == 0:
+    #         csac = calc_rdm(data_mat[:, i_sbst], rdm_size, pre_ignore, delta_time_smple)
+    #     else:
+    #         csac = (csac + calc_rdm(data_mat[:, i_sbst], rdm_size, pre_ignore, delta_time_smple)) / 2
+    #     if SHOW:
+    #         visualize_rdms(np.expand_dims(csac, axis=0), title='cross-session correlation of Activity vectors (sbst {})'.format(i_sbst+1), show_hists=False, show_bars=False, show=False)
+
+    # cross-session activity correlation, by average of the two epochs
+    csac = calc_rdm(data_mat.mean(axis=1), rdm_size, pre_ignore, delta_time_smple)
 
     if  PROCESS_QUADS:
         R0 = relative_codes(rdm0, first=0, last=4, remove_diag=True, normalize=False)
@@ -427,6 +433,67 @@ def do_analysis_for_two_epoch_sets(contact_list, esel0, esel1,
 
 
     return rdm_size, rdm0, rdm1, csac, R0, R1
+
+
+def show_corr_diagonals(csac_list, rep_pcors_list, show=False):
+
+
+    # show the diagonals
+    if csac_list.ndim == 2:
+        csac_list = np.expand_dims(csac_list, axis=0)
+    if rep_pcors_list.ndim == 2:
+        rep_pcors_list = np.expand_dims(rep_pcors_list, axis=0)
+    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+    c_act_avg, c_act_sem = np.mean(csac_list, axis=0), np.std(csac_list, axis=0) / np.sqrt(csac_list.shape[0])
+    c_rep_avg, c_rep_sem = np.mean(rep_pcors_list, axis=0), np.std(rep_pcors_list, axis=0) / np.sqrt(csac_list.shape[0])
+    #c_rep_avg, c_rep_std = rep_pcors, np.zeros(rep_pcors.shape)
+    ax.bar(np.arange(c_act_avg.shape[0]) - 0.2 - 1, np.diag(c_act_avg), width=0.2, label='activations')
+    ax.bar(np.arange(c_act_avg.shape[0]) - 0.2 - 1, 2 * np.diag(c_act_sem), bottom=np.diag(c_act_avg) - np.diag(c_act_sem), width=0.05, color='k')
+    ax.bar(np.arange(c_rep_avg.shape[0]) + 0.2 - 1, np.diag(c_rep_avg), width=0.2, label='relational codes')
+    ax.bar(np.arange(c_rep_avg.shape[0]) + 0.2 - 1, 2 * np.diag(c_rep_sem), bottom=np.diag(c_rep_avg) - np.diag(c_rep_sem), width=0.05, color='k')
+    ax.set_xticks(np.arange(c_rep_avg.shape[0]) - 1)
+    ax.grid(True)
+    ax.set_ylim([-1.1, 1.1])
+    ax.legend()
+    if show:
+        plt.show()
+    #
+
+
+def show_relational_codes(R0_list, R1_list, show=False):
+
+    if R0_list.ndim == 2:
+        R0_list = np.expand_dims(R0_list, axis=0)
+    if R1_list.ndim == 2:
+        R1_list = np.expand_dims(R1_list, axis=0)
+    avg_size, num_codes, code_size = R0_list.shape
+    assert R0_list.shape == R1_list.shape
+
+    fig, ax = plt.subplots(num_codes, 2, figsize=(10, 10))
+    fig.suptitle('relational codes')
+    R0_avg, R0_sem = np.mean(R0_list, axis=0), np.std(R0_list, axis=0) / np.sqrt(avg_size)
+    R1_avg, R1_sem = np.mean(R1_list, axis=0), np.std(R1_list, axis=0) / np.sqrt(avg_size)
+    lower = min(R0_list[np.logical_not(np.isnan(R0_list))].min(), R1_list[np.logical_not(np.isnan(R1_list))].min())
+    upper = max(R0_list[np.logical_not(np.isnan(R0_list))].max(), R1_list[np.logical_not(np.isnan(R1_list))].max())
+    lower, upper = np.floor(lower * 5) / 5, np.ceil(upper * 5) / 5
+    for i in range(num_codes):
+        for ii in range(2):
+            ax[i, ii].set_ylim([lower-0.05, upper+0.05])
+            ax[i, ii].set_xlim([-2, code_size])
+            ax[i, ii].axis(False)
+            ax[i, ii].plot([-1, code_size], [0, 0], c='k', linewidth=2)
+            for y in np.linspace(start=lower, stop=upper, num=int(1 + (upper - lower) / 0.2)):
+                if y != 0:
+                    ax[i, ii].plot([-1, code_size], [y, y], linewidth=1, color=(1-y, 0.5, y) if y>0 else (0, 0, 0))
+        ax[i, 0].bar(np.arange(code_size), R0_avg[i], width=0.4)
+        ax[i, 1].bar(np.arange(code_size), R1_avg[i], width=0.4)
+        ax[i, 0].bar(np.arange(code_size), 2 * R0_sem[i], bottom=R0_avg[i] - R0_sem[i], width=0.2)
+        ax[i, 1].bar(np.arange(code_size), 2 * R1_sem[i], bottom=R1_avg[i] - R1_sem[i], width=0.2)
+        ax[i, 0].text(-3, 0, str(i-1))
+
+    if show:
+        plt.show()
+
 
 
 
@@ -445,7 +512,8 @@ def show_region_distribution(contact_list, title=None):
     ax.bar(regions, 100 * counter / counter.sum())
     #ax.grid(True)
     ax.set_xticks(np.arange(len(regions)))  # Explicitly set ticks if needed (though ax.bar often sets them)
-    ax.set_xticklabels(regions, rotation=90, ha='right')
+    ax.set_xticklabels(regions, rotation=70, ha='right')
+    ax.set_ylabel('contact percentage')
     fig.tight_layout()
     if title:
         fig.suptitle(title)
@@ -532,15 +600,20 @@ if __name__ == '__main__':
 
     projector = None#activation_pca(contact_list=contact_list)#
 
-    SELECT_CONTACTS_BY_CORR = True
+    SELECT_CONTACTS_BY_CORR = False
     if SELECT_CONTACTS_BY_CORR:
         data_mat, valid_contact_mask = read_evoked_data_two_sessions(contact_list, 4, esel_list=np.arange(len(epoch_subsets)))
         mask = select_channels_by_correlation(data_mat, valid_contact_mask, 4, show=True)
         contact_list = [contact_list[i] for i in np.argwhere(mask).flatten()]
 
+    SAVE_CONTACT_LIST = False
+    if SAVE_CONTACT_LIST:
+        with open('C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_4d', 'wb') as fd:
+            pickle.dump(contact_list, fd)
+
     USE_CONTACT_SELECTION_FROM_FILE = False
     if USE_CONTACT_SELECTION_FROM_FILE:
-        with open('C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_6d', 'rb') as fd:
+        with open('C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_4d', 'rb') as fd:
             contact_list_ref = pickle.load(fd)
         combined_list = []
         for cid, c in enumerate(contact_list):
@@ -558,7 +631,7 @@ if __name__ == '__main__':
 
             rdm_size_, rdm0_, rdm1_, csac_, R0_, R1_ = do_analysis_for_two_epoch_sets(contact_list, i_sbst0, i_sbst1,
                                                                                       V_SAMP_PER_SEC, SHOW_TIME_PER_CONTACT, False, CORR_WINDOW_SEC,
-                                                                                      AUTO_OR_CROSS_ACTIVATION, CONTACT_SPLIT, PROCESS_QUADS, tfm=projector, SHOW=(i_sbst0 + i_sbst1 == 1))
+                                                                                      AUTO_OR_CROSS_ACTIVATION, CONTACT_SPLIT, PROCESS_QUADS, tfm=projector, SHOW=(i_sbst0 + i_sbst1 == 111))
             if pair_cnt == 0:
                 rdm_size, rdm0, rdm1, csac, R0, R1 = rdm_size_, rdm0_, rdm1_, csac_, R0_, R1_
             else:
@@ -584,11 +657,16 @@ if __name__ == '__main__':
 show_region_distribution(contact_list, title='{} contacts , delta=T = {} hrs to {} hrs'.format(len(contact_list), event_type, MIN_TGAP, MAX_TGAP))
 #plt.show()
 
-visualize_rdms(np.expand_dims(rdm0, axis=0), title=' early session ', show_hists=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.1, 0.2])
-visualize_rdms(np.expand_dims(rdm1, axis=0), title=' subsequent session', show_hists=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.1, 0.2])
-for i_sbst in range(2 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 1):
+
+# VISUALIZE RESULTS FOR PLAIN AVERAGING
+DISPLAY_PLAIN_AVERAGING=False
+if DISPLAY_PLAIN_AVERAGING:
+    visualize_rdms(np.expand_dims(rdm0, axis=0), title=' early session ', show_hists=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.1, 0.2])
+    visualize_rdms(np.expand_dims(rdm1, axis=0), title=' subsequent session', show_hists=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.1, 0.2])
+    #for i_sbst in range(range(2 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 1):
     visualize_rdms(np.expand_dims(csac, axis=0),
-                   title='cross-session correlation of Activity vectors (sbst {})'.format(i_sbst + 1),
+                   #title='cross-session correlation of Activity vectors (sbst {})'.format(i_sbst + 1),
+                   title='cross-session correlation of Activity vectors among sessions',
                    show_hists=False, show_bars=False, show=False)
 
 
@@ -597,56 +675,70 @@ for i_sbst in range(2 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 1):
         for digit_2 in range(rdm_size):
             v1, v2 = R0[digit_1], R1[digit_2]
             rep_pcors[digit_1, digit_2] = pierson (v1, v2, remove_nans=True) #(v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
-    visualize_rdms(np.expand_dims(rep_pcors, axis=0), title='full vector relative representation correlation', show_hists=False, show_bars=False, show=True)
+    visualize_rdms(np.expand_dims(rep_pcors, axis=0), title='full vector relative representation correlation', show_hists=False, show_bars=False, show=False)
+    show_corr_diagonals(csac, rep_pcors, show=True)
 
-    # #
-    # # redu everything with lists
-    # csac_list, R0_list, R1_list = np.array(csac_list), np.array(R0_list), np.array(R1_list)
+
+    #
+    # redu everything with lists
+DISPLAY_5_3_2 = True
+if DISPLAY_5_3_2:
+    csac_list, R0_list, R1_list = np.array(csac_list), np.array(R0_list), np.array(R1_list)
     # # re-disply activation correlations with error bars
     # visualize_rdms(np.expand_dims(np.mean(csac_list, axis=0), axis=0),
     #                title='cross-session correlation of Activity vectors recalculated', show_hists=False, show_bars=False, show=False)
     # visualize_rdms(np.expand_dims(np.std(csac_list, axis=0), axis=0),
     #                title='cross-session correlation of Activity vectors recalculated, STDEV', show_hists=False, show_bars=False, show=False)
     # # no generate rep_pcoers for seperate reps
-    # # partial averagings
-    # if AUTO_OR_CROSS_ACTIVATION == 'CROSS':
-    #     sbgrps = np.array((1, 10, 15, 2, 8, 14, 3, 9, 11, 4, 7, 12, 5, 6, 13)).reshape(5, 3)
-    #     sub_cnt = 5
-    # if AUTO_OR_CROSS_ACTIVATION == 'AUTO':
-    #     sbgrps = np.array((1, 2, 3, 4, 5, 6)).reshape(3, 2)
-    #     sub_cnt = 3
-    # R0_list_, R1_list_ = np.zeros((sub_cnt, R0_list.shape[1], R0_list.shape[2])), np.zeros((sub_cnt, R0_list.shape[1], R0_list.shape[2]))
-    # for i_sub in range(sub_cnt):
-    #     R0_list_[i_sub] = R0_list[sbgrps[i_sub] - 1].mean(axis=0)
-    #     R1_list_[i_sub] = R1_list[sbgrps[i_sub] - 1].mean(axis=0)
-    # R0_list, R1_list = R0_list_, R1_list_
-    #
-    # rep_pcors_list = np.zeros((sub_cnt, rdm_size, rdm_size))
-    # for i_pair in range(sub_cnt):
-    #     for digit_1 in range(rdm_size):
-    #         for digit_2 in range(rdm_size):
-    #             v1, v2 = R0_list[i_pair, digit_1], R1_list[i_pair, digit_2]
-    #             rep_pcors_list[i_pair, digit_1, digit_2] = pierson (v1, v2, remove_nans=True) #(v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
-    # visualize_rdms(np.expand_dims(np.mean(rep_pcors_list, axis=0), axis=0),
-    #                title='RELATIVE REPRESANTATION AVG CORR', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0,1, 0.2], ovrd_heat_scale=[-0.2, 0.3])
+    # partial averagings
+    if AUTO_OR_CROSS_ACTIVATION == 'CROSS':
+        sbgrps = np.array((1, 10, 15, 2, 8, 14, 3, 9, 11, 4, 7, 12, 5, 6, 13)).reshape(5, 3)
+        sub_cnt = 5
+    if AUTO_OR_CROSS_ACTIVATION == 'AUTO':
+        sbgrps = np.array((1, 2, 3, 4, 5, 6)).reshape(3, 2)
+        sub_cnt = 3
+    Cact_list_ = np.zeros((sub_cnt, csac_list.shape[1], csac_list.shape[2]))
+    R0_list_, R1_list_ = np.zeros((sub_cnt, R0_list.shape[1], R0_list.shape[2])), np.zeros((sub_cnt, R0_list.shape[1], R0_list.shape[2]))
+    for i_sub in range(sub_cnt):
+        Cact_list_[i_sub] = csac_list[sbgrps[i_sub] - 1].mean(axis=0)
+        R0_list_[i_sub] = R0_list[sbgrps[i_sub] - 1].mean(axis=0)
+        R1_list_[i_sub] = R1_list[sbgrps[i_sub] - 1].mean(axis=0)
+    csac_list, R0_list, R1_list = Cact_list_, R0_list_, R1_list_
+
+    rep_pcors_list = np.zeros((sub_cnt, rdm_size, rdm_size))
+    for i_pair in range(sub_cnt):
+        for digit_1 in range(rdm_size):
+            for digit_2 in range(rdm_size):
+                v1, v2 = R0_list[i_pair, digit_1], R1_list[i_pair, digit_2]
+                rep_pcors_list[i_pair, digit_1, digit_2] = pierson (v1, v2, remove_nans=True) #(v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
+    visualize_rdms(np.expand_dims(np.mean(csac_list, axis=0), axis=0),
+                   title='ACTIVATION CROSS-SESSION AVG CORR', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3])
+    visualize_rdms(np.expand_dims(np.mean(rep_pcors_list, axis=0), axis=0),
+                   title='RELATIVE REPRESANTATION AVG CORR', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0,1, 0.2], ovrd_heat_scale=[-1, 1])
     # visualize_rdms(np.expand_dims(np.std(rep_pcors_list, axis=0), axis=0),
     #                title='RELATIVE REPRESANTATION STDEV CORR', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0,1, 0.2], ovrd_heat_scale=[-0.2, 0.3])
+    show_relational_codes(R0_list, R1_list, show=False)
+    show_corr_diagonals(csac_list, rep_pcors_list, show=True)
     #
+    rep_pcors = rep_pcors_list.mean(axis=0)
 
-    # show the diagonals
-    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
-    c_act_avg, c_act_std = np.mean(csac_list, axis=0), np.std(csac_list, axis=0)
-    #c_rep_avg, c_rep_std = np.mean(rep_pcors_list, axis=0), np.std(rep_pcors_list, axis=0)
-    c_rep_avg, c_rep_std = rep_pcors, np.zeros(rep_pcors.shape)
-    ax.bar(np.arange(c_act_avg.shape[0]) - 0.2, np.diag(c_act_avg), width=0.2, label='activations')
-    ax.bar(np.arange(c_act_avg.shape[0]) - 0.2, 2 * np.diag(c_act_std), bottom=np.diag(c_act_avg) - np.diag(c_act_std), width=0.05, color='k')
-    ax.bar(np.arange(c_rep_avg.shape[0]) + 0.2, np.diag(c_rep_avg), width=0.2, label='relational codes')
-    ax.bar(np.arange(c_rep_avg.shape[0]) + 0.2, 2 * np.diag(c_rep_std), bottom=np.diag(c_rep_avg) - np.diag(c_rep_std), width=0.05, color='k')
-    ax.grid(True)
-    ax.set_ylim([-1.1, 1.1])
-    ax.legend()
-    plt.show()
-    #
+
+
+    # # show the diagonals
+    # fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+    # c_act_avg, c_act_std = np.mean(csac_list, axis=0), np.std(csac_list, axis=0)
+    # #c_rep_avg, c_rep_std = np.mean(rep_pcors_list, axis=0), np.std(rep_pcors_list, axis=0)
+    # c_rep_avg, c_rep_std = rep_pcors, np.zeros(rep_pcors.shape)
+    # ax.bar(np.arange(c_act_avg.shape[0]) - 0.2, np.diag(c_act_avg), width=0.2, label='activations')
+    # ax.bar(np.arange(c_act_avg.shape[0]) - 0.2, 2 * np.diag(c_act_std), bottom=np.diag(c_act_avg) - np.diag(c_act_std), width=0.05, color='k')
+    # ax.bar(np.arange(c_rep_avg.shape[0]) + 0.2, np.diag(c_rep_avg), width=0.2, label='relational codes')
+    # ax.bar(np.arange(c_rep_avg.shape[0]) + 0.2, 2 * np.diag(c_rep_std), bottom=np.diag(c_rep_avg) - np.diag(c_rep_std), width=0.05, color='k')
+    # ax.grid(True)
+    # ax.set_ylim([-1.1, 1.1])
+    # ax.legend()
+    # plt.show()
+    # #
+
 
 
     # statistics
@@ -663,22 +755,22 @@ for i_sbst in range(2 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 1):
     print('relative :\t\t\t {:4.2f} (dev {:4.2f}) \t{:4.2f} (dev {:4.2f}) '.format(on_diag.mean(), on_diag.std(), off_diag.mean(), off_diag.std()))
 
 
-    # show the diagonals
-    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
-    ax.bar(np.arange(csac.shape[0]) - 0.2, np.diag(csac), width=0.2, label='activations')
-    ax.bar(np.arange(rep_pcors.shape[0]) + 0.2, np.diag(rep_pcors), width=0.2, label='relational codes')
-    ax.grid(True)
-    ax.set_ylim([-1.1, 1.1])
-    ax.legend()
-    if not PROCESS_QUADS:
-        ax.set_xticks(np.arange(12), ['pre\ncnt', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'post\ncnt'])
-    fig.suptitle('correlations')
-    plt.show()
-    #
-    fname = 'C:/Users/menas/OneDrive/Desktop/openneuro/tmpres-sbst'# + str(EPOCH_SUBSET)
-    with open(fname, 'wb') as fd:
-        pickle.dump({'csac': csac, 'rep_pcors': rep_pcors}, fd)
-    #
+    # # show the diagonals
+    # fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+    # ax.bar(np.arange(csac.shape[0]) - 0.2, np.diag(csac), width=0.2, label='activations')
+    # ax.bar(np.arange(rep_pcors.shape[0]) + 0.2, np.diag(rep_pcors), width=0.2, label='relational codes')
+    # ax.grid(True)
+    # ax.set_ylim([-1.1, 1.1])
+    # ax.legend()
+    # if not PROCESS_QUADS:
+    #     ax.set_xticks(np.arange(12), ['pre\ncnt', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'post\ncnt'])
+    # fig.suptitle('correlations')
+    # plt.show()
+    # #
+    # fname = 'C:/Users/menas/OneDrive/Desktop/openneuro/tmpres-sbst'# + str(EPOCH_SUBSET)
+    # with open(fname, 'wb') as fd:
+    #     pickle.dump({'csac': csac, 'rep_pcors': rep_pcors}, fd)
+    # #
 
 
     # EXAMPLE ON GENERATING SPLITS

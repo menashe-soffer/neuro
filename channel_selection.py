@@ -330,8 +330,8 @@ def select_channels_by_correlation(data_mat, valid_contact_mask, v_samp_per_sec,
                         xcorr_f[i_sess] += np.convolve(chan_data[i_sess, i1, ::-1], chan_data[i_sess, i2])
                     avg_cnt += 1
         #xcorr_f = xcorr_f[1] if xcorr_f[0].max() > xcorr_f[1].max() else xcorr_f[0]
-        if xcorr_f[0].max() > xcorr_f[1].max():
-            xcorr_f = xcorr_f[::-1]
+        # if xcorr_f[0].max() > xcorr_f[1].max():
+        #     xcorr_f = xcorr_f[::-1]
 
         return xcorr_f / (num_epochs * (num_epochs - 1) / 2)
 
