@@ -43,8 +43,9 @@ def consistant_random_grouping(data, num_groups=2, pindex=2, axis=0, padding=Fal
 
 
 
-def pierson(x, y, remove_nans=False):
+def pierson(x, y, remove_nans=False, mode='p'):
 
+    assert mode in ['p', 'c', 'd'] # [ierson, cosine, distance]
     if remove_nans:
         rmv_cols = np.concatenate((np.argwhere(np.isnan(x)).flatten(), np.argwhere(np.isnan(y)).flatten()))
         if rmv_cols.size > 0:
@@ -55,10 +56,15 @@ def pierson(x, y, remove_nans=False):
                 y = np.concatenate((y[:rmv_cols[0]], y[rmv_cols[0]+1:]))
                 rmv_cols = rmv_cols[1:] - 1
 
-    x1, y1 = x - x.mean(), y - y.mean()
-    return (x1 * y1).sum() / (np.linalg.norm(x1) * np.linalg.norm(y1) + 1e-16)
+    x1, y1 = x - x.mean() * (mode == 'p'), y - y.mean() * (mode == 'p')
+    if mode == 'd':
+        return 1 - 2 * np.linalg.norm(x1 - y1)  / (np.linalg.norm(x1) + np.linalg.norm(y1) + 1e-16)
+    else:
+        return (x1 * y1).sum() / (np.linalg.norm(x1) * np.linalg.norm(y1) + 1e-16)
 
-def calc_rdm(data, rdm_size, pre_ignore, delta_time_smple):
+
+
+def calc_rdm(data, rdm_size, pre_ignore, delta_time_smple, corr_mode='p'):
 
     # input data should be of size (2, #contacts, data_bins)
     assert data.ndim == 3
@@ -261,7 +267,7 @@ def relative_codes(cmat, first=0, last=-1, remove_diag=True, normalize=False):
 def do_analysis_for_two_epoch_sets(contact_list, esel0, esel1,
                                    V_SAMP_PER_SEC, SHOW_TIME_PER_CONTACT, ACTIVE_CONTACTS_ONLY,
                                    CORR_WINDOW_SEC, AUTO_OR_CROSS_ACTIVATION,
-                                   CONTACT_SPLIT, PROCESS_QUADS, tfm=None, SHOW=True):
+                                   CONTACT_SPLIT, PROCESS_QUADS, tfm=None, SHOW=True, ccorr_mode='p'):
 
 
     data_mat, active_contact_mask, _ = read_data_single_two_sessions_single_epoch(contact_list, v_samp_per_sec=V_SAMP_PER_SEC, active_contacts_only=ACTIVE_CONTACTS_ONLY, esel=esel0, cmprs=False)
@@ -269,6 +275,8 @@ def do_analysis_for_two_epoch_sets(contact_list, esel0, esel1,
     keep = active_contact_mask * active_contact_mask2 if not tfm else tfm.get_contact_mask()
     contact_list = [contact_list[i] for i in np.argwhere(keep).flatten()]
     data_mat = np.concatenate((np.expand_dims(data_mat, axis=1), np.expand_dims(data_mat2, axis=1)), axis=1)[:, :, keep]
+
+    #data_mat -= np.tile(np.expand_dims(data_mat[:, :, :, 1:-1].mean(axis=-1), axis=-1), 12)
     #
     if SHOW and tfm:
         data_mat_show = np.copy(data_mat)
@@ -282,7 +290,7 @@ def do_analysis_for_two_epoch_sets(contact_list, esel0, esel1,
                 plt.show()
         plt.show()
     #
-    data_mat = tfm.remove_first_componenets(data=data_mat, n=0) if tfm else data_mat
+    #data_mat = tfm.remove_first_componenets(data=data_mat, n=0) if tfm else data_mat
 
     # #
     # fig, ax = plt.subplots(2, 2, figsize=(8, 8), sharex=True, sharey=True)
@@ -422,7 +430,7 @@ def do_analysis_for_two_epoch_sets(contact_list, esel0, esel1,
     #         visualize_rdms(np.expand_dims(csac, axis=0), title='cross-session correlation of Activity vectors (sbst {})'.format(i_sbst+1), show_hists=False, show_bars=False, show=False)
 
     # cross-session activity correlation, by average of the two epochs
-    csac = calc_rdm(data_mat.mean(axis=1), rdm_size, pre_ignore, delta_time_smple)
+    csac = calc_rdm(data_mat.mean(axis=1), rdm_size, pre_ignore, delta_time_smple, corr_mode=ccorr_mode)
 
     if  PROCESS_QUADS:
         R0 = relative_codes(rdm0, first=0, last=4, remove_diag=True, normalize=False)
@@ -432,7 +440,7 @@ def do_analysis_for_two_epoch_sets(contact_list, esel0, esel1,
         R1 = relative_codes(rdm1, first=1, remove_diag=True, normalize=False)
 
 
-    return rdm_size, rdm0, rdm1, csac, R0, R1
+    return rdm_size, rdm0, rdm1, csac, R0, R1, contact_list
 
 
 def show_corr_diagonals(csac_list, rep_pcors_list, show=False):
@@ -473,16 +481,20 @@ def show_relational_codes(R0_list, R1_list, show=False):
     fig.suptitle('relational codes')
     R0_avg, R0_sem = np.mean(R0_list, axis=0), np.std(R0_list, axis=0) / np.sqrt(avg_size)
     R1_avg, R1_sem = np.mean(R1_list, axis=0), np.std(R1_list, axis=0) / np.sqrt(avg_size)
-    lower = min(R0_list[np.logical_not(np.isnan(R0_list))].min(), R1_list[np.logical_not(np.isnan(R1_list))].min())
-    upper = max(R0_list[np.logical_not(np.isnan(R0_list))].max(), R1_list[np.logical_not(np.isnan(R1_list))].max())
-    lower, upper = np.floor(lower * 5) / 5, np.ceil(upper * 5) / 5
+    # lower = min(R0_list[np.logical_not(np.isnan(R0_list))].min(), R1_list[np.logical_not(np.isnan(R1_list))].min())
+    # upper = max(R0_list[np.logical_not(np.isnan(R0_list))].max(), R1_list[np.logical_not(np.isnan(R1_list))].max())
+    lower = min((R0_avg - R0_sem)[np.logical_not(np.isnan(R0_avg))].min(), (R1_avg - R1_sem)[np.logical_not(np.isnan(R1_avg))].min())
+    upper = max((R0_avg + R1_sem)[np.logical_not(np.isnan(R0_avg))].max(), (R1_avg + R1_sem)[np.logical_not(np.isnan(R1_avg))].max())
+    ystep = 0.1
+    lower, upper = np.floor(lower / ystep) * ystep, np.ceil(upper / ystep) * ystep
     for i in range(num_codes):
         for ii in range(2):
             ax[i, ii].set_ylim([lower-0.05, upper+0.05])
             ax[i, ii].set_xlim([-2, code_size])
             ax[i, ii].axis(False)
             ax[i, ii].plot([-1, code_size], [0, 0], c='k', linewidth=2)
-            for y in np.linspace(start=lower, stop=upper, num=int(1 + (upper - lower) / 0.2)):
+
+            for y in np.linspace(start=lower, stop=upper, num=int(1 + (upper - lower) / ystep)):
                 if y != 0:
                     ax[i, ii].plot([-1, code_size], [y, y], linewidth=1, color=(1-y, 0.5, y) if y>0 else (0, 0, 0))
         ax[i, 0].bar(np.arange(code_size), R0_avg[i], width=0.4)
@@ -533,17 +545,25 @@ if __name__ == '__main__':
     AUTO_OR_CROSS_ACTIVATION = "CROSS"  # "AUTO": generate session rdm from single epoch set (diagonal = 1); "CROSS": cross-correlate two epoch sets
     EPOCH_SUBSET = 'e0-e5'#
     OTHER_EPOCH_SUBSET = 'e6-e11' if AUTO_OR_CROSS_ACTIVATION == "CROSS" else EPOCH_SUBSET# None#for making self-session rdms
-    AVG_MANY_EPOCHS = ['e0-e0', 'e1-e1', 'e2-e2', 'e3-e3', 'e4-e4', 'e5-e5']
+    AVG_MANY_EPOCHS = []#['e0-e0', 'e1-e1', 'e2-e2', 'e3-e3', 'e4-e4', 'e5-e5']
     MIN_TGAP, MAX_TGAP = 72, 96#60, 160#10, 500#
     SELECT_CONTACTS_BY_PERIODICITY = 0 # 0: ignore periodicity, 1: select periodic contacts, -1: select NON-periodic contacts
     CONTACT_SPLIT = None # None: use all, 0: even contacts only, 1: odd contacts only
     PROCESS_QUADS = False
     event_type = 'CNTDWN' # one of: 'CNTDWN', 'RECALL', 'DSTRCT', 'REST'
+    CROSS_SESSION_CMODE = 'p'
     #
     if PROCESS_QUADS:
         V_SAMP_PER_SEC = V_SAMP_PER_SEC * 4
         CORR_WINDOW_SEC = CORR_WINDOW_SEC / 4
     #assert (AUTO_OR_CROSS_ACTIVATION == "CROSS") or (not AVG_MANY_EPOCHS)
+    #
+    SELECT_CONTACTS_BY_CORR = False
+    V_SAMP_FOR_SLCT = 4
+    SAVE_CONTACT_LIST = False
+    USE_CONTACT_SELECTION_FROM_FILE = True
+    CONTACT_SELECTION_FILE_NAME = 'C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_4d_4d_sel'
+
 
 
     data_availability_obj = data_availability()
@@ -600,38 +620,41 @@ if __name__ == '__main__':
 
     projector = None#activation_pca(contact_list=contact_list)#
 
-    SELECT_CONTACTS_BY_CORR = False
     if SELECT_CONTACTS_BY_CORR:
-        data_mat, valid_contact_mask = read_evoked_data_two_sessions(contact_list, 4, esel_list=np.arange(len(epoch_subsets)))
-        mask = select_channels_by_correlation(data_mat, valid_contact_mask, 4, show=True)
+        data_mat, valid_contact_mask = read_evoked_data_two_sessions(contact_list, V_SAMP_FOR_SLCT, esel_list=np.arange(len(epoch_subsets)))
+        mask = select_channels_by_correlation(data_mat, valid_contact_mask, V_SAMP_FOR_SLCT, show=True)
         contact_list = [contact_list[i] for i in np.argwhere(mask).flatten()]
 
-    SAVE_CONTACT_LIST = False
-    if SAVE_CONTACT_LIST:
-        with open('C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_4d', 'wb') as fd:
-            pickle.dump(contact_list, fd)
+    # if SAVE_CONTACT_LIST:
+    #     with open(CONTACT_SELECTION_FILE_NAME, 'wb') as fd:
+    #         pickle.dump(contact_list, fd)
 
-    USE_CONTACT_SELECTION_FROM_FILE = False
     if USE_CONTACT_SELECTION_FROM_FILE:
-        with open('C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_4d', 'rb') as fd:
+        with open(CONTACT_SELECTION_FILE_NAME, 'rb') as fd:
             contact_list_ref = pickle.load(fd)
         combined_list = []
         for cid, c in enumerate(contact_list):
             for rid, r in enumerate(contact_list_ref):
                 #print(c, r)
-                if (c['subject'] == r['subject']) and (c['name'] == r['name']) and (len(c['first']) >= 6) and(len(c['second']) >= 6):
+                if (c['subject'] == r['subject']) and (c['name'] == r['name']) and (len(c['first']) >= len(AVG_MANY_EPOCHS)) and(len(c['second']) >= len(AVG_MANY_EPOCHS)):
                     print(c['subject'], c['name'], r['subject'], r['name'], cid, rid, len(combined_list))
                     combined_list.append(c)
-        contact_list = combined_list[:100]
+        contact_list = combined_list[:len(contact_list_ref)]#[:100]
+
+    from temp_plots import remove_double_contacts
+    contact_list = remove_double_contacts(contact_list)
+
 
     pair_cnt = 0
+    contact_list_ = []
     csac_list, R0_list, R1_list, rdm0_list, rdm1_list = [], [], [], [], []
     for i_sbst0 in range(len(epoch_subsets) - (1 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 0)):
         for i_sbst1 in range(i_sbst0 + 1, len(epoch_subsets)) if AUTO_OR_CROSS_ACTIVATION=='CROSS' else [i_sbst0] :
 
-            rdm_size_, rdm0_, rdm1_, csac_, R0_, R1_ = do_analysis_for_two_epoch_sets(contact_list, i_sbst0, i_sbst1,
-                                                                                      V_SAMP_PER_SEC, SHOW_TIME_PER_CONTACT, False, CORR_WINDOW_SEC,
-                                                                                      AUTO_OR_CROSS_ACTIVATION, CONTACT_SPLIT, PROCESS_QUADS, tfm=projector, SHOW=(i_sbst0 + i_sbst1 == 111))
+            rdm_size_, rdm0_, rdm1_, csac_, R0_, R1_, contact_list__ = do_analysis_for_two_epoch_sets(contact_list, i_sbst0, i_sbst1,
+                                               V_SAMP_PER_SEC, SHOW_TIME_PER_CONTACT, False, CORR_WINDOW_SEC,
+                                               AUTO_OR_CROSS_ACTIVATION, CONTACT_SPLIT, PROCESS_QUADS, tfm=projector, SHOW=(i_sbst0 + i_sbst1 == 111), ccorr_mode=CROSS_SESSION_CMODE)
+            contact_list_ = contact_list_ + contact_list__
             if pair_cnt == 0:
                 rdm_size, rdm0, rdm1, csac, R0, R1 = rdm_size_, rdm0_, rdm1_, csac_, R0_, R1_
             else:
@@ -654,34 +677,44 @@ if __name__ == '__main__':
     R0 /= pair_cnt
     R1 /= pair_cnt
 
-show_region_distribution(contact_list, title='{} contacts , delta=T = {} hrs to {} hrs'.format(len(contact_list), event_type, MIN_TGAP, MAX_TGAP))
+
+
+if SAVE_CONTACT_LIST:
+    with open(CONTACT_SELECTION_FILE_NAME, 'wb') as fd:
+        pickle.dump(contact_list_, fd)
+
+show_region_distribution(contact_list, title='{} contacts , delta=T = {} hrs to {} hrs'.format(len(contact_list), MIN_TGAP, MAX_TGAP))
 #plt.show()
 
 
 # VISUALIZE RESULTS FOR PLAIN AVERAGING
-DISPLAY_PLAIN_AVERAGING=False
+DISPLAY_PLAIN_AVERAGING = len(AVG_MANY_EPOCHS) == 0
 if DISPLAY_PLAIN_AVERAGING:
-    visualize_rdms(np.expand_dims(rdm0, axis=0), title=' early session ', show_hists=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.1, 0.2])
-    visualize_rdms(np.expand_dims(rdm1, axis=0), title=' subsequent session', show_hists=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.1, 0.2])
+    visualize_rdms(np.expand_dims(rdm0, axis=0), title=' early session ', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.1, 0.2])
+    visualize_rdms(np.expand_dims(rdm1, axis=0), title=' subsequent session', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.1, 0.2])
     #for i_sbst in range(range(2 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 1):
     visualize_rdms(np.expand_dims(csac, axis=0),
                    #title='cross-session correlation of Activity vectors (sbst {})'.format(i_sbst + 1),
                    title='cross-session correlation of Activity vectors among sessions',
                    show_hists=False, show_bars=False, show=False)
 
-
+    show_relational_codes(R0, R1, show=False)
     rep_pcors = np.zeros((rdm_size, rdm_size))
     for digit_1 in range(rdm_size):
         for digit_2 in range(rdm_size):
             v1, v2 = R0[digit_1], R1[digit_2]
-            rep_pcors[digit_1, digit_2] = pierson (v1, v2, remove_nans=True) #(v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
+            #rep_pcors[digit_1, digit_2] = pierson (v1, v2, remove_nans=True) #(v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
+            rep_pcors[digit_1, digit_2] = pierson(v1, v2, remove_nans=True, mode=CROSS_SESSION_CMODE)  # (v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
     visualize_rdms(np.expand_dims(rep_pcors, axis=0), title='full vector relative representation correlation', show_hists=False, show_bars=False, show=False)
     show_corr_diagonals(csac, rep_pcors, show=True)
+
+    with open(os.path.join(os.path.dirname(CONTACT_SELECTION_FILE_NAME), 'cs_corrs_1'), 'wb') as fd:
+        pickle.dump(dict({'csac': csac, 'rep_pcorr': rep_pcors}), fd)
 
 
     #
     # redu everything with lists
-DISPLAY_5_3_2 = True
+DISPLAY_5_3_2 = len(AVG_MANY_EPOCHS) >= 6
 if DISPLAY_5_3_2:
     csac_list, R0_list, R1_list = np.array(csac_list), np.array(R0_list), np.array(R1_list)
     # # re-disply activation correlations with error bars
@@ -710,7 +743,8 @@ if DISPLAY_5_3_2:
         for digit_1 in range(rdm_size):
             for digit_2 in range(rdm_size):
                 v1, v2 = R0_list[i_pair, digit_1], R1_list[i_pair, digit_2]
-                rep_pcors_list[i_pair, digit_1, digit_2] = pierson (v1, v2, remove_nans=True) #(v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
+                #rep_pcors_list[i_pair, digit_1, digit_2] = pierson (v1, v2, remove_nans=True) #(v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
+                rep_pcors_list[i_pair, digit_1, digit_2] = pierson(v1, v2, remove_nans=True, mode=CROSS_SESSION_CMODE)  # (v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
     visualize_rdms(np.expand_dims(np.mean(csac_list, axis=0), axis=0),
                    title='ACTIVATION CROSS-SESSION AVG CORR', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3])
     visualize_rdms(np.expand_dims(np.mean(rep_pcors_list, axis=0), axis=0),
@@ -719,6 +753,12 @@ if DISPLAY_5_3_2:
     #                title='RELATIVE REPRESANTATION STDEV CORR', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0,1, 0.2], ovrd_heat_scale=[-0.2, 0.3])
     show_relational_codes(R0_list, R1_list, show=False)
     show_corr_diagonals(csac_list, rep_pcors_list, show=True)
+
+
+    with open(os.path.join(os.path.dirname(CONTACT_SELECTION_FILE_NAME), 'cs_corrs_5_3'), 'wb') as fd:
+        pickle.dump(dict({'csac': csac_list, 'rep_pcorr': rep_pcors_list}), fd)
+
+
     #
     rep_pcors = rep_pcors_list.mean(axis=0)
 

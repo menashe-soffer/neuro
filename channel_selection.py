@@ -287,7 +287,7 @@ def select_channels_by_correlation1(data_mat, valid_contact_mask, v_samp_per_sec
 
 def select_channels_by_correlation(data_mat, valid_contact_mask, v_samp_per_sec, show=False):
 
-    cstart, cstop = 1, 11
+    cstart, cstop = 1-1, 11+1
 
     num_chans = data_mat.shape[2]
     num_sess, num_epochs, seg_len = data_mat.shape[0], data_mat.shape[1], v_samp_per_sec * (cstop - cstart)
@@ -312,6 +312,14 @@ def select_channels_by_correlation(data_mat, valid_contact_mask, v_samp_per_sec,
     xcorr_vec_m = np.min(xcorr_vec, axis=0)
     #xcorr_vec_m = np.min(np.max(xcorr_vec, axis=2), axis=0)
 
+    CROSS_SESSION = False
+    if CROSS_SESSION:
+        data_mat1 = data_mat.mean(axis=1)
+        for i_chan in range(num_chans):
+            v0, v1 = data_mat1[0, i_chan], data_mat1[1, i_chan]
+            v0, v1 = v0 - v0.mean(), v1 - v1.mean()
+            xcorr_vec_m[i_chan] = (v0 * v1).sum() / (np.linalg.norm(v0) * np.linalg.norm(v1) + 1e-18)
+
     def calc_xcor_for_chan(data_mat, ch_id, num_sess, num_epochs, v_samp_per_sec, cstart, cstop):
 
         chan_data = data_mat[:, :, ch_id, cstart*v_samp_per_sec:cstop*v_samp_per_sec]
@@ -321,7 +329,7 @@ def select_channels_by_correlation(data_mat, valid_contact_mask, v_samp_per_sec,
         for i_sess in range(num_sess):
             for i_epoch in range(num_epochs):
                 chan_data[i_sess, i_epoch] -= chan_data[i_sess, i_epoch].mean()
-                chan_data[i_sess, i_epoch] /= np.linalg.norm(chan_data[i_sess, i_epoch])
+                chan_data[i_sess, i_epoch] /= np.linalg.norm(chan_data[i_sess, i_epoch] + 1e-18)
             for i1 in range(num_epochs - 1):
                 for i2 in range(i1 + 1, num_epochs):
                     if avg_cnt == 0:
@@ -348,6 +356,8 @@ def select_channels_by_correlation(data_mat, valid_contact_mask, v_samp_per_sec,
         fig_good.suptitle('best 40 contacts')
         fig_bad, ax_bad = plt.subplots(5, 8, figsize=(16, 12), sharey=True)
         fig_bad.suptitle('worst 40 contacts')
+        fig_good_sig, ax_good_sig = plt.subplots(5, 8, figsize=(16, 12), sharey=True)
+        fig_good_sig.suptitle('best 40 contacts')
         span = [xcorr_vec_m.min(), xcorr_vec_m.max()]
         for i in range(40):
             ax_good.flatten()[i].grid(True)
@@ -362,6 +372,7 @@ def select_channels_by_correlation(data_mat, valid_contact_mask, v_samp_per_sec,
             ax_bad.flatten()[i].set_xticks([0, int(bad_xc.shape[1]  / 2), bad_xc.shape[1]  -1])
             ax_good.flatten()[i].set_ylabel(str(good_sel[i]))
             ax_bad.flatten()[i].set_ylabel(str(bad_sel[i]))
+            ax_good_sig.flatten()[i].plot(data_mat[:, :, good_sel[i]].mean(axis=1).T)
             # print('channel {} xc={:4.2f}'.format(good_sel[i], xcorr_vec_m[good_sel[i]]))
             # print('channel {} xc={:4.2f}'.format(bad_sel[i], xcorr_vec_m[bad_sel[i]]))
 
@@ -372,6 +383,8 @@ def select_channels_by_correlation(data_mat, valid_contact_mask, v_samp_per_sec,
     # thd1 = np.sort(xcorr_vec[1])[::-1][100]
     # slct1 = xcorr_vec[1] >= thd1
     # return valid_contact_mask * np.logical_or(slct0, slct1)
+    plt.plot(np.sort(xcorr_vec_m))
+    plt.show()
 
     thd = np.sort(xcorr_vec_m)[::-1][100]
     return valid_contact_mask * (xcorr_vec_m > thd)
