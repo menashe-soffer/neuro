@@ -195,7 +195,7 @@ class data_availability:
 
 
 
-    def get_contacts_for_2_session_gap(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None, epoch_subset=None):
+    def get_contacts_for_2_session_gap(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None, epoch_subset=None, enforce_first=False):
 
         # first make flattened session list
         suitable_session_pairs = []
@@ -213,7 +213,7 @@ class data_availability:
                         print('fail', subject, keys[i1], keys[i2], session_dates[i2], session_dates[i1])
             #
             suitability_mat = (timegap_matrix_hrs > min_timegap_hrs) * (timegap_matrix_hrs < max_timegap_hrs)
-            for i1 in range(num_sessions-1):
+            for i1 in range(1 if enforce_first else num_sessions-1):
                 for i2 in range(i1+1, num_sessions):
                     if suitability_mat[i1, i2]:
                         pair = {'subject': subject, 'first': keys[i1], 'second': keys[i2],
@@ -262,7 +262,7 @@ class data_availability:
 
 
 
-    def get_get_contacts_for_2_session_gap_epoch_splits(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None, epoch_subsets=None):
+    def get_get_contacts_for_2_session_gap_epoch_splits(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None, epoch_subsets=None, enforce_first=False):
 
         _, contact_list = self.get_contacts_for_2_session_gap(min_timegap_hrs=min_timegap_hrs, max_timegap_hrs=max_timegap_hrs,
                                                               event_type=event_type, sub_event_type=sub_event_type, epoch_subset=epoch_subsets[0])
@@ -273,7 +273,7 @@ class data_availability:
         for i_sbst, second_epoch_subset in enumerate(epoch_subsets[1:]):
 
             _, contact_list2 = self.get_contacts_for_2_session_gap(min_timegap_hrs=min_timegap_hrs, max_timegap_hrs=max_timegap_hrs,
-                                                                   event_type=event_type, sub_event_type=sub_event_type, epoch_subset=second_epoch_subset)
+                                                                   event_type=event_type, sub_event_type=sub_event_type, epoch_subset=second_epoch_subset, enforce_first=enforce_first)
             # TBD find intersect of two lists
             combined_list = []
             rplc_pattrn_1, rplc_pattern2 = str(epoch_subsets[0]), str(second_epoch_subset)
@@ -295,6 +295,57 @@ class data_availability:
         return contact_list
 
 
+    def get_subject_list(self):
+
+        return list(self.data.keys())
+
+
+    def get_sessions_for_subject(self, subject, event_type='CNTDWN', sub_event_type='', epoch_subsets=None):
+
+        subject_data = self.data[subject]
+        if len(subject_data) < 2:
+            return []
+
+        elapsed = np.diff([subject_data['sessions'][s]['timestamp'] for s in subject_data['sessions']]) / 3600
+        elapsed = np.concatenate(([0], elapsed))
+
+        assert epoch_subsets is not None
+        evoked_lists = []
+        for epoch_subset in epoch_subsets:
+            pattern = os.path.join(self.processed_folder, subject, 'ses-*', event_type.lower(), '*bipolar_{}--{}'.format(epoch_subset, event_type + '-ieeg-evoked-ave.fif'))
+            evoked_lists.append(glob.glob(pattern))
+
+        # availability matrix
+        sessions = list(subject_data['sessions'])
+        availability_matrix = np.zeros((len(epoch_subsets), subject_data['numsessions']), dtype=bool)
+        for i_epoch, epoch_subset in enumerate(epoch_subsets):
+            for i_sess, sess in enumerate(sessions):
+                availability_matrix[i_epoch, i_sess] = np.any([name.find(sess) > -1 for name in evoked_lists[i_epoch]])
+
+        # find best session combination
+        session_sel_mask = availability_matrix.sum(axis=0) >= len(epoch_subsets)
+        if (session_sel_mask.sum() < 2) or (not session_sel_mask[0]):
+            return []
+
+        # make lists for all SESSION-PAIRS (to be able to use pair code)
+        pair_lists = []
+        i1 = np.argwhere(session_sel_mask).flatten()[0]
+        for i2 in i1 + 1 + np.argwhere(session_sel_mask[i1 + 1:]).flatten():
+            first_idxs = [np.argwhere([e.find(sessions[i1] + '_') > -1 for e in evoked_lists[i]]).squeeze() for i in range(len(epoch_subsets))]
+            second_idxs = [np.argwhere([e.find(sessions[i2] + '_') > -1 for e in evoked_lists[i]]).squeeze() for i in range(len(epoch_subsets))]
+            #print(i1, i2, subject)
+            suitable_contacts = []
+            for i_cntct, contact in enumerate(subject_data['bipolar_names']):
+                suitable_contacts.append({'subject': subject, 'name': contact, 'delta_hrs': elapsed[i2],
+                                          'location': self.__bipolar_contact_additional_data(contact, subject_data['electrodes by name']),
+                                          'first': [evoked_lists[i][first_idxs[i]] for i in range(len(epoch_subsets))],
+                                          'second': [evoked_lists[i][second_idxs[i]] for i in range(len(epoch_subsets))]})
+            pair_lists.append(suitable_contacts)
+
+        #
+        return pair_lists
+
+
 
     # def get_avail_evoked_ave_files(self, major_event, sub_event):
     #
@@ -303,8 +354,58 @@ class data_availability:
     #     return glob.glob(pattern)
 
 
+class contact_list_services:
+
+    def __init__(self):
+
+        pass
+
+    def is_same_contact(self, c1, c2):
+        same_sbjct = c1['subject'] == c2['subject']
+        same_name = c1['name'] == c2['name']
+        return same_sbjct and same_name
+
+    def intersect_lists(self, list1, list2):
+
+        list = []
+        for c1 in list1:
+            # for c2 in list2:
+            #     if same_contact(c1, c2):
+            #         list.append(c1)
+            if np.any([self.is_same_contact(c1, c2) for c2 in list2]):
+                list.append(c1)
+
+        return self.remove_double_contacts(list)
+
+    def remove_double_contacts(self, list):
+
+        new_list = []
+        for c1 in list:
+            # exists = False
+            # for c2 in new_list:
+            #     exists = exists or same_contact(c1, c2)
+            # if not exists:
+            #     new_list.append(c1)
+            if not np.any([self.is_same_contact(c1, c2) for c2 in new_list]):
+                new_list.append(c1)
+
+        return new_list
 
 
+    def get_sesseion_list(self, contact_list):
+
+        sess_list = dict()
+        for c in contact_list:
+            subject = c['subject']
+            sess0 = c['first'][0][c['first'][0].find('ses-'):][:5]
+            sess1 = c['second'][0][c['second'][0].find('ses-'):][:5]
+            #print(subject, sess0, sess1)
+            if not (subject in list(sess_list.keys())):
+                sess_list[subject] = dict({sess0: 0, sess1: 0})
+            sess_list[subject][sess0] += 1
+            sess_list[subject][sess1] += 1
+
+        return sess_list
 
 
 
