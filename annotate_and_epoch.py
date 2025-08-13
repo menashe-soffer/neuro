@@ -3,6 +3,12 @@ import mne.preprocessing
 import numpy as np
 import matplotlib.pyplot as plt
 import path_utils
+import psutil
+import gc
+import datetime
+import time
+from func_timeout import func_timeout, FunctionTimedOut
+
 #from my_montage_reader import my_montage_reader
 from my_mne_wrapper import my_mne_wrapper
 from event_reader import event_reader
@@ -28,6 +34,12 @@ subject_list =  ['sub-R1001P', 'sub-R1002P', 'sub-R1003P', 'sub-R1006P', 'sub-R1
                  'sub-R1354E', 'sub-R1355T', 'sub-R1361C', 'sub-R1363T', 'sub-R1367D', 'sub-R1374T', 'sub-R1377M', 'sub-R1378T', 'sub-R1379E', 'sub-R1385E',
                  'sub-R1386T', 'sub-R1387E', 'sub-R1391T', 'sub-R1394E', 'sub-R1396T', 'sub-R1405E', 'sub-R1415T', 'sub-R1416T', 'sub-R1420T', 'sub-R1422T',
                  'sub-R1425D', 'sub-R1427T', 'sub-R1443D', 'sub-R1449T', 'sub-R1463E', 'sub-R1542J']
+#
+# work on all subjects, NOR ONLY SUBJECTS WITH MULTIPLE SESSION
+#
+import glob
+subject_list = [os.path.basename((s)) for s in glob.glob('E:/ds004789-download/sub-R*')]
+#
 
 
 def gaussian(bins, m, sigma, alpha):
@@ -365,21 +377,46 @@ def psd_wrapper(raw_obj):
     return evoked
 
 
+class monitor_and_run_gc:
+
+    def __init__(self):
+
+        self.memtrace = []
+        self.threshold = 10000
+        self.process = psutil.Process(os.getpid())
+    def __ceil__(self):
+
+        memory_mb = self.process.memory_info().rss / (1024 * 1024)
+        logging.info(f"Current memory usage: {memory_mb:.2f} MB")
+        if memory_mb > self.threshold:
+            logging.info(f"Triggering garbage collection...")
+            #print(f"Triggering garbage collection...")
+            collected = gc.collect()
+            memory_after_gc = self.process.memory_info().rss / (1024 * 1024)
+            logging.info(f"after collecting {collected} object, memory usage is {memory_after_gc:.2f} MB")
+            #print(f"after collecting {collected} object, memory usage is {memory_after_gc:.2f} MB")
 
 
 
+gc_obj = monitor_and_run_gc()
 FORCE_OVERRIDE = False
 from tqdm import tqdm
 fail_list = []
-events_to_process = ['orient', 'dstrct', 'recall', 'cntdwn', 'list', 'rest']
+events_to_process = ['cntdwn']#['orient', 'dstrct', 'recall', 'cntdwn', 'list', 'rest']
 for subject in tqdm(subject_list):
-    paths = path_utils.get_paths(BASE_FOLDER, subject=subject, mode='bipolar')
+    print(datetime.datetime.now(), '\t:\t', subject)
+    paths = path_utils.get_paths(subject=subject, mode='bipolar')
     for path in paths:
+        print('\t', datetime.datetime.now(), len(paths))
         _, events_to_process_for_session = check_if_files_exist(src_path=path, event_names=events_to_process, force_override=FORCE_OVERRIDE, verbose=True)
         if len(events_to_process_for_session) > 0:
             try:
                 # read .edf file and generate mne_object with annotation of bad chans and segs
-                mne_copy, original_sfreq = read_edf_and_mark_bad_chans_and_segs(path)
+                #mne_copy, original_sfreq = read_edf_and_mark_bad_chans_and_segs(path)
+                mne_copy, original_sfreq = (
+                    func_timeout(600,
+                                 read_edf_and_mark_bad_chans_and_segs,
+                                 args=(path,)))
                 # read the annotations
                 event_obj = event_reader(fname=path['events'])
                 event_obj.align_to_sampling_rate(old_sfreq=original_sfreq, new_sfreq=mne_copy.info['sfreq'])
@@ -393,7 +430,10 @@ for subject in tqdm(subject_list):
                 psd = psd_wrapper(mne_copy)
                 psd_fname = path['signals'].replace(BASE_FOLDER, PROC_FOLDER).replace('ieeg', 'PSD').replace('.edf', '_ave.fif')
                 os.makedirs(os.path.dirname(psd_fname), exist_ok=True)
-                psd.save(psd_fname, overwrite=FORCE_OVERRIDE)
+                try:
+                    psd.save(psd_fname, overwrite=FORCE_OVERRIDE)
+                except:
+                    pass
                 #
                 for event_name in events_to_process_for_session:
                     try:
@@ -401,6 +441,9 @@ for subject in tqdm(subject_list):
                     except:
                             fail_list.append(path['signals'] + ' : ' + event_name)
                             logging.warning('FAILED TO GENERATE .fif for {} FROM   {}'.format(event_name, path['signals']))
+
+            # # monitor and maintain gc
+            # gc_obj.__ceil__()
 
 if len(fail_list) > 0:
     print('FAILED TO GENERATE THE FOLLOWING FILES:')
