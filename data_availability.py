@@ -195,13 +195,16 @@ class data_availability:
 
 
 
-    def get_contacts_for_2_session_gap(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None, epoch_subset=None, enforce_first=False):
+    def get_contacts_for_2_session_gap(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None, epoch_subset=None, enforce_first=False, single_session=False):
 
         # first make flattened session list
         suitable_session_pairs = []
         for subject in self.data:
             subject_data = self.data[subject]
             keys = list(subject_data['sessions'].keys())
+            if single_session:
+                # PATCH TO USE THE CODE FOR SINGLE SESSION
+                keys, min_timegap_hrs = [keys[0], keys[0]], -1
             num_sessions = len(keys)
             timegap_matrix_hrs = np.zeros((num_sessions, num_sessions))
             session_dates =  [subject_data['sessions'][sess]['date'] for sess in keys]
@@ -262,10 +265,10 @@ class data_availability:
 
 
 
-    def get_get_contacts_for_2_session_gap_epoch_splits(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None, epoch_subsets=None, enforce_first=False):
+    def get_get_contacts_for_2_session_gap_epoch_splits(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None, epoch_subsets=None, enforce_first=False, single_session=False):
 
         _, contact_list = self.get_contacts_for_2_session_gap(min_timegap_hrs=min_timegap_hrs, max_timegap_hrs=max_timegap_hrs,
-                                                              event_type=event_type, sub_event_type=sub_event_type, epoch_subset=epoch_subsets[0])
+                                                              event_type=event_type, sub_event_type=sub_event_type, epoch_subset=epoch_subsets[0], single_session=single_session)
 
         for contact in contact_list:
             contact['first'], contact['second'] = [contact['first']], [contact['second']]
@@ -273,7 +276,8 @@ class data_availability:
         for i_sbst, second_epoch_subset in enumerate(epoch_subsets[1:]):
 
             _, contact_list2 = self.get_contacts_for_2_session_gap(min_timegap_hrs=min_timegap_hrs, max_timegap_hrs=max_timegap_hrs,
-                                                                   event_type=event_type, sub_event_type=sub_event_type, epoch_subset=second_epoch_subset, enforce_first=enforce_first)
+                                                                   event_type=event_type, sub_event_type=sub_event_type, epoch_subset=second_epoch_subset,
+                                                                   enforce_first=enforce_first, single_session=single_session)
             # TBD find intersect of two lists
             combined_list = []
             rplc_pattrn_1, rplc_pattern2 = str(epoch_subsets[0]), str(second_epoch_subset)
@@ -300,10 +304,10 @@ class data_availability:
         return list(self.data.keys())
 
 
-    def get_sessions_for_subject(self, subject, event_type='CNTDWN', sub_event_type='', epoch_subsets=None):
+    def get_sessions_for_subject(self, subject, event_type='CNTDWN', sub_event_type='', epoch_subsets=None, at_leatst_2_session=True):
 
         subject_data = self.data[subject]
-        if len(subject_data) < 2:
+        if at_leatst_2_session and (len(subject_data['sessions']) < 2):
             return []
 
         elapsed = np.diff([subject_data['sessions'][s]['timestamp'] for s in subject_data['sessions']]) / 3600

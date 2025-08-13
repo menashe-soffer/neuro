@@ -1,5 +1,13 @@
 
 from rdm_tools import *
+def split_session_to_fake_sessions(contact_list, segment_size=3, pair_idx=1):
+
+    for i_contact, contact in enumerate(contact_list):
+        contact['second'] = contact['first'][int(pair_idx*segment_size):int((pair_idx+1)*segment_size)]
+        contact['first'] = contact['first'][:segment_size]
+
+    return contact_list
+
 
 
 if __name__ == '__main__':
@@ -11,13 +19,22 @@ if __name__ == '__main__':
     AUTO_OR_CROSS_ACTIVATION = "CROSS"  # "AUTO": generate session rdm from single epoch set (diagonal = 1); "CROSS": cross-correlate two epoch sets
     EPOCH_SUBSET = 'e0-e5'#
     OTHER_EPOCH_SUBSET = 'e6-e11' if AUTO_OR_CROSS_ACTIVATION == "CROSS" else EPOCH_SUBSET# None#for making self-session rdms
-    AVG_MANY_EPOCHS = ['e0-e0', 'e1-e1', 'e2-e2', 'e3-e3', 'e4-e4', 'e5-e5']
+    #AVG_MANY_EPOCHS = ['e0-e0', 'e1-e1', 'e2-e2', 'e3-e3', 'e4-e4', 'e5-e5', 'e6-e6', 'e7-e7', 'e8-e8', 'e9-e9', 'e10-e10', 'e11-e11', 'e12-e12', 'e13-e13', 'e14-e14', 'e15-e15', 'e16-e16', 'e17-e17']
+    AVG_MANY_EPOCHS = ['e0-e2', 'e3-e5', 'e6-e8', 'e9-e11', 'e12-e14', 'e15-e17']
     MIN_TGAP, MAX_TGAP = 24, 48#108, 180#60, 108#36, 60#72, 96#60, 160#10, 500#180, 276#
     SELECT_CONTACTS_BY_PERIODICITY = 0 # 0: ignore periodicity, 1: select periodic contacts, -1: select NON-periodic contacts
     CONTACT_SPLIT = None # None: use all, 0: even contacts only, 1: odd contacts only
     PROCESS_QUADS = False
     event_type = 'CNTDWN' # one of: 'CNTDWN', 'RECALL', 'DSTRCT', 'REST'
     CROSS_SESSION_CMODE = 'p'
+    #
+    WITHIN_SESSION_PROCESS = True
+    if WITHIN_SESSION_PROCESS:
+        MIN_TGAP, MAX_TGAP = 1, 1000
+        #WITHIN_SESSION_SEGMENT_SIZE, WITHIN_SESSION_PAIR_IDX = 6, 2
+        WITHIN_SESSION_SEGMENT_SIZE, WITHIN_SESSION_PAIR_IDX = 3, 1
+    else:
+        WITHIN_SESSION_SEGMENT_SIZE = len(AVG_MANY_EPOCHS)
     #
     if PROCESS_QUADS:
         V_SAMP_PER_SEC = V_SAMP_PER_SEC * 4
@@ -29,7 +46,7 @@ if __name__ == '__main__':
     SAVE_CONTACT_LIST = False
     USE_CONTACT_SELECTION_FROM_FILE = True
     #CONTACT_SELECTION_FILE_NAME = 'C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_cntdwn_{}_{}'.format(MIN_TGAP, MAX_TGAP)
-    CONTACT_SELECTION_FILE_NAME = 'C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_cntdwn_best'
+    CONTACT_SELECTION_FILE_NAME = 'C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_cntdwn_1_3'
 
 
 
@@ -37,7 +54,7 @@ if __name__ == '__main__':
     epoch_subsets =  [EPOCH_SUBSET, OTHER_EPOCH_SUBSET] if not AVG_MANY_EPOCHS else AVG_MANY_EPOCHS
     contact_list = data_availability_obj.get_get_contacts_for_2_session_gap_epoch_splits(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
                                                                                          event_type=event_type, sub_event_type=event_type,
-                                                                                         epoch_subsets=epoch_subsets, enforce_first=True)
+                                                                                         epoch_subsets=epoch_subsets, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
 
     # #
     # temp_list = ['sub-R1065J', 'sub-R1083J', 'sub-R1111M', 'sub-R1112M', 'sub-R1118N', 'sub-R1161E', 'sub-R1168T', 'sub-R1172E', 'sub-R1196N',
@@ -50,6 +67,8 @@ if __name__ == '__main__':
     # #assert False
     # contact_list = revised2d
     # #
+    if WITHIN_SESSION_PROCESS:
+        contact_list = split_session_to_fake_sessions(contact_list, segment_size=WITHIN_SESSION_SEGMENT_SIZE, pair_idx=WITHIN_SESSION_PAIR_IDX)
 
 
 
@@ -103,7 +122,7 @@ if __name__ == '__main__':
         for cid, c in enumerate(contact_list):
             for rid, r in enumerate(contact_list_ref):
                 #print(c, r)
-                if (c['subject'] == r['subject']) and (c['name'] == r['name']) and (len(c['first']) >= len(AVG_MANY_EPOCHS)) and(len(c['second']) >= len(AVG_MANY_EPOCHS)):
+                if (c['subject'] == r['subject']) and (c['name'] == r['name']) and (len(c['first']) >= WITHIN_SESSION_SEGMENT_SIZE) and(len(c['second']) >= WITHIN_SESSION_SEGMENT_SIZE):
                     print(c['subject'], c['name'], r['subject'], r['name'], cid, rid, len(combined_list))
                     combined_list.append(c)
         contact_list = combined_list[:len(contact_list_ref)]#[:100]
@@ -116,8 +135,9 @@ if __name__ == '__main__':
     contact_list_ = np.copy(contact_list)
     services = contact_list_services()
     csac_list, R0_list, R1_list, rdm0_list, rdm1_list = [], [], [], [], []
-    for i_sbst0 in range(len(epoch_subsets) - (1 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 0)):
-        for i_sbst1 in range(i_sbst0 + 1, len(epoch_subsets)) if AUTO_OR_CROSS_ACTIVATION=='CROSS' else [i_sbst0] :
+    epoch_count = len(contact_list[0]['first']) #len(epoch_subsets)
+    for i_sbst0 in range(epoch_count - (1 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 0)):
+        for i_sbst1 in range(i_sbst0 + 1, epoch_count) if AUTO_OR_CROSS_ACTIVATION=='CROSS' else [i_sbst0] :
 
             rdm_size_, rdm0_, rdm1_, csac_, R0_, R1_, contact_list__ = do_analysis_for_two_epoch_sets(contact_list_, subject_ids, i_sbst0, i_sbst1,
                                                V_SAMP_PER_SEC, SHOW_TIME_PER_CONTACT, False, CORR_WINDOW_SEC,
@@ -196,8 +216,12 @@ if DISPLAY_5_3_2:
     # # no generate rep_pcoers for seperate reps
     # partial averagings
     if AUTO_OR_CROSS_ACTIVATION == 'CROSS':
-        sbgrps = np.array((1, 10, 15, 2, 8, 14, 3, 9, 11, 4, 7, 12, 5, 6, 13)).reshape(5, 3)
-        sub_cnt = 5
+        if pair_cnt == 15:
+            sbgrps = np.array((1, 10, 15, 2, 8, 14, 3, 9, 11, 4, 7, 12, 5, 6, 13)).reshape(5, 3)
+            sub_cnt = 5
+        if pair_cnt == 3:
+            sbgrps = np.array((1, 2, 3)).reshape(1, 3)
+            sub_cnt = 1
     if AUTO_OR_CROSS_ACTIVATION == 'AUTO':
         sbgrps = np.array((1, 2, 3, 4, 5, 6)).reshape(3, 2)
         sub_cnt = 3
@@ -216,6 +240,10 @@ if DISPLAY_5_3_2:
                 v1, v2 = R0_list[i_pair, digit_1], R1_list[i_pair, digit_2]
                 #rep_pcors_list[i_pair, digit_1, digit_2] = pierson (v1, v2, remove_nans=True) #(v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
                 rep_pcors_list[i_pair, digit_1, digit_2] = pierson(v1, v2, remove_nans=True, mode=CROSS_SESSION_CMODE)  # (v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
+    visualize_rdms(np.expand_dims(rdm0, axis=0),
+                   title='RDM 1st SESSION', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3])
+    visualize_rdms(np.expand_dims(rdm1, axis=0),
+                   title='RDM 2nd SESSION', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3])
     visualize_rdms(np.expand_dims(np.mean(csac_list, axis=0), axis=0),
                    title='ACTIVATION CROSS-SESSION AVG CORR', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3])
     visualize_rdms(np.expand_dims(np.mean(rep_pcors_list, axis=0), axis=0),

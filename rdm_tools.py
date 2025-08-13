@@ -218,8 +218,8 @@ def read_data_single_two_sessions_single_epoch(contact_list, subject_ids, v_samp
         # now read the data in the requested resolution
         src_idx1 = np.argwhere([contact['name'] == c for c in first_data.ch_names]).squeeze()
         src_idx2 = np.argwhere([contact['name'] == c for c in second_data.ch_names]).squeeze()
-        not_bad1 = np.logical_not(np.any([contact['name'] == b for b in first_data.info['bads']]))
-        not_bad2 = np.logical_not(np.any([contact['name'] == b for b in second_data.info['bads']]))
+        not_bad1 = np.logical_not(np.any([contact['name'] == b for b in first_data.info['bads']]))#True#
+        not_bad2 = np.logical_not(np.any([contact['name'] == b for b in second_data.info['bads']]))#True#
         not_bad1 = not_bad1 and np.any(first_data._data[src_idx1] != 0)  # !!!   PATCH    !!!
         not_bad2 = not_bad2 and np.any(second_data._data[src_idx2] != 0)  # !!!   PATCH    !!!
         not_bad1 = not_bad1 and np.abs(first_data._data[src_idx1]).max() < 3  # !!!   PATCH    !!!

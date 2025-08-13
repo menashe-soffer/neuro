@@ -34,7 +34,7 @@ def find_epoched_subject(base_folder, epoched_folder, min_sessions=2, type='cntd
             fif_pattern = os.path.join(epoched_folder, subject, sess, type, subject + '_' + sess + '_task-FR1_acq-bipolar_ieeg-epo.fif')
             fif_counter += os.path.isfile(fif_pattern)
             subject_epoched_files.append(fif_pattern)
-        paths = get_paths(base_folder=base_folder, subject=subject, mode='bipolar')
+        paths = get_paths(subject=subject, mode='bipolar')
         montage_path = paths[0]['electrodes']
         if fif_counter >= min_sessions:
             output.append({'subject': subject, 'montage': montage_path, 'epoched': subject_epoched_files})
@@ -377,15 +377,16 @@ if __name__ == '__main__':
     TYPE_TO_PROCESS = 'cntdwn'# 'list'#'rest'#'recall'#'dstrct'#'orient'#
     file_type, event_type, sub_event_type, proc_params, proc_params_sub = get_params_for_event_type(TYPE_TO_PROCESS)
 
-    list = find_epoched_subject(base_folder=base_folder, epoched_folder=epoched_folder, type=file_type)
+    list = find_epoched_subject(base_folder=base_folder, epoched_folder=epoched_folder, type=file_type, min_sessions=1)
     #print(list)
     fail_list = []
     tstart = time.time()
     for subject_item in tqdm.tqdm(list):
         for epoched_file in subject_item['epoched']:
             try:
-                process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, proc_params_sub, SHOW, SHOW_ONLY,
-                                     subsets=[range(0, 1), range(1, 2), range(2, 3), range(3, 4), range(4, 5), range(5, 6)])#, range(0, 2), range(0, 4), range(0, 8)])
+                all_subsets = [range(i, i+1) for i in range(18)] + [range(i, i+3) for i in range(0, 18, 3)]
+                process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, proc_params_sub, SHOW, SHOW_ONLY, subsets=all_subsets)
+                                    #[range(0, 1), range(1, 2), range(2, 3), range(3, 4), range(4, 5), range(5, 6)])#, range(0, 2), range(0, 4), range(0, 8)])
             except:
                 fail_list.append(epoched_file)
                 logging.warning(epoched_file + '  :   FAILED')
