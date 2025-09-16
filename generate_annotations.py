@@ -6,6 +6,9 @@ import matplotlib.pyplot as plt
 import path_utils
 import pickle
 #import json
+import argparse
+from tqdm import tqdm
+
 #from my_montage_reader import my_montage_reader
 from my_mne_wrapper import my_mne_wrapper
 from event_reader import event_reader
@@ -14,11 +17,11 @@ from paths_and_constants import *
 from noise_classifier import noise_classifier
 
 import logging
-logging.basicConfig(filename=os.path.join(BASE_FOLDER, os.path.basename(__file__).replace('.py', '.log')), filemode='w', level=logging.DEBUG)
+#logging.basicConfig(filename=os.path.join(ASE_BFOLDER, os.path.basename(__file__).replace('.py', '.log')), filemode='w', level=logging.DEBUG)
 
 
 
-subject_list =  path_utils.get_subject_list()
+#subject_list =  path_utils.get_subject_list()
 
 
 def generate_epoched_version(path, mne_copy, event_obj, create_new=True, event_name='cntdwn'):
@@ -136,73 +139,89 @@ def add_annotations(mne_obj, events, description):
 
     for event in events:
         if 'end' in list(event.keys()):
-            mne_obj.annotations.append(event['onset'], event['end'] - event['onset'], description)
+            #mne_obj.annotations.append(event['onset'], event['end'] - event['onset'], description)
+            mne_obj.annotations.append(event['onset sample'] / mne_obj.info['sfreq'], event['end'] - event['onset'], description)
         elif 'duration' in list(event.keys()):
-            mne_obj.annotations.append(event['onset'], event['duration'], description)
+            #mne_obj.annotations.append(event['onset'], event['duration'], description)
+            mne_obj.annotations.append(event['onset sample'] / mne_obj.info['sfreq'], event['duration'], description)
         # if event['interim events']:
         #     print('here')
 
 
 
 
-FORCE_OVERRIDE = False
-from tqdm import tqdm
-fail_list = []
-noise_classifier_obj = noise_classifier()
-for subject in tqdm(subject_list):
-    paths = path_utils.get_paths(subject=subject, mode='bipolar')
-    for path in paths:
-        annot_fname = path_utils.target_file_name(path['signals'], 'annot')
-        if FORCE_OVERRIDE or (not os.path.isfile(annot_fname)):
-            try:
-                # read .edf file and generate mne_object with annotation of bad chans and segs
-                mne_wrapper = my_mne_wrapper()
-                mne_wrapper.read_edf_file(path['signals'])  # ), chanel_groups=electrodes)
-                mne_wrapper.preprocess()
-                assert mne_wrapper.get_mne().info['sfreq'] == 500
-                mne_copy = mne_wrapper.get_mne().copy()
-                mne_copy = noise_classifier_obj.mark_bad_chans_and_segs(mne_copy, logger=None)
-                # read the annotations
-                event_obj = event_reader(fname=path['events'])
-                event_obj.align_to_sampling_rate(old_sfreq=mne_wrapper.original_sfreq, new_sfreq=mne_copy.info['sfreq'])
-                read_success = True
 
-                # #
-                # psd = psd_wrapper(mne_copy)
-                # psd_fname = path['signals'].replace(BASE_FOLDER, PROC_FOLDER).replace('ieeg', 'PSD').replace('.edf', '_ave.fif')
-                # os.makedirs(os.path.dirname(psd_fname), exist_ok=True)
-                # psd.save(psd_fname, overwrite=FORCE_OVERRIDE)
-                # #
+if __name__ == '__main__':
+    
+    # Parse command-line arguments for partitioning
+    parser = argparse.ArgumentParser(description='Process data folders in parallel.')
+    parser.add_argument('--partition-id', type=int, default=0, help='The ID of the partition to process (0-indexed).')
+    parser.add_argument('--num-partitions', type=int, default=1, help='The total number of partitions.')
+    
+    args = parser.parse_args()
+    
 
-                add_annotations(mne_copy, event_obj.get_countdowns(), 'CNTDWN')
-                add_annotations(mne_copy, event_obj.get_list_events(), 'LIST')
-                add_annotations(mne_copy, event_obj.get_recalls(), 'RECALL')
-                add_annotations(mne_copy, event_obj.get_distracts(), 'DSTRCT')
-                add_annotations(mne_copy, event_obj.get_rests(), 'REST')
-                add_annotations(mne_copy, event_obj.get_orients(), 'ORIENT')
-                add_annotations(mne_copy, event_obj.get_word_events(), 'WORD')
+    logging.basicConfig(filename=os.path.join(LOG_FOLDER, os.path.basename(__file__).replace('.py', '_{}.log'.format(args.partition_id))), filemode='w', level=logging.DEBUG)
 
-                annotate_obj = dict({'bads': mne_copy.info['bads'], 'annotations': mne_copy.annotations,
-                                     'events': {'cntdwn': event_obj.get_countdowns(), 'list': event_obj.get_list_events(),
-                                                'recall': event_obj.get_recalls(), 'dstrct': event_obj.get_distracts(),
-                                                'rest': event_obj.get_rests(), 'orient': event_obj.get_orients(),
-                                                'words': event_obj.get_word_events()}})
+    subject_list =  path_utils.get_subject_list()
+    subject_list = np.sort(subject_list)[args.partition_id::args.num_partitions]
 
 
+    FORCE_OVERRIDE = True
+    fail_list = []
+    noise_classifier_obj = noise_classifier()
+    for subject in subject_list:#tqdm(subject_list):
+        logging.info('\nworking on {}\n'.format(subject))
+        paths = path_utils.get_paths(subject=subject, mode='bipolar')
+        for path in paths:
+            annot_fname = path_utils.target_file_name(path['signals'], 'annot')
+            if FORCE_OVERRIDE or (not os.path.isfile(annot_fname)):
+                try:
+                    # read .edf file and generate mne_object with annotation of bad chans and segs
+                    mne_wrapper = my_mne_wrapper()
+                    mne_wrapper.read_edf_file(path['signals'])  # ), chanel_groups=electrodes)
+                    mne_wrapper.preprocess()
+                    assert mne_wrapper.get_mne().info['sfreq'] == 500
+                    mne_copy = mne_wrapper.get_mne().copy()
 
-                os.makedirs(os.path.dirname(annot_fname), exist_ok=True)
-                with open(annot_fname, 'wb') as fd:
-                    pickle.dump(annotate_obj, fd)
-                    #json.dump(annotate_obj, fd)
-
-            except:
-                fail_list.append(path['signals'])
-                logging.warning('FAILED TO GENERATE .annot  FROM   {}'.format(path['signals']))
+                    # read the annotations
+                    event_obj = event_reader(fname=path['events'])
+                    event_obj.align_to_sampling_rate(old_sfreq=mne_wrapper.original_sfreq, new_sfreq=mne_copy.info['sfreq'])
+                    read_success = True
 
 
-if len(fail_list) > 0:
-    print('FAILED TO GENERATE THE FOLLOWING FILES:')
-    for fname in fail_list:
-        print('\t', fname)
+                    add_annotations(mne_copy, event_obj.get_countdowns(), 'CNTDWN')
+                    add_annotations(mne_copy, event_obj.get_list_events(), 'LIST')
+                    add_annotations(mne_copy, event_obj.get_recalls(), 'RECALL')
+                    add_annotations(mne_copy, event_obj.get_distracts(), 'DSTRCT')
+                    add_annotations(mne_copy, event_obj.get_rests(), 'REST')
+                    add_annotations(mne_copy, event_obj.get_orients(), 'ORIENT')
+                    add_annotations(mne_copy, event_obj.get_word_events(), 'WORD')
 
-#print('total channels:   {}   excluded channels:  {}'.format(total_chans, exclude_chans))
+                    # identify and mark bad chans and segs
+                    mne_copy = noise_classifier_obj.mark_bad_chans_and_segs(mne_copy, logger=logging.getLogger(__name__))
+
+                    annotate_obj = dict({'bads': mne_copy.info['bads'], 'annotations': mne_copy.annotations,
+                                        'events': {'cntdwn': event_obj.get_countdowns(), 'list': event_obj.get_list_events(),
+                                                    'recall': event_obj.get_recalls(), 'dstrct': event_obj.get_distracts(),
+                                                    'rest': event_obj.get_rests(), 'orient': event_obj.get_orients(),
+                                                    'words': event_obj.get_word_events()}})
+
+
+
+                    os.makedirs(os.path.dirname(annot_fname), exist_ok=True)
+                    with open(annot_fname, 'wb') as fd:
+                        pickle.dump(annotate_obj, fd)
+                        #json.dump(annotate_obj, fd)
+
+                except:
+                    fail_list.append(path['signals'])
+                    logging.warning('FAILED TO GENERATE .annot  FROM   {}'.format(path['signals']))
+
+
+    if len(fail_list) > 0:
+        print('FAILED TO GENERATE THE FOLLOWING FILES:')
+        for fname in fail_list:
+            print('\t', fname)
+
+    #print('total channels:   {}   excluded channels:  {}'.format(total_chans, exclude_chans))

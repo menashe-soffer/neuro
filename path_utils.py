@@ -38,7 +38,7 @@ def get_subject_list():
 
 
 
-def target_file_name(edf_fname, type):
+def target_file_name(edf_fname, type, extra_info=None):
 
     #
     edf_fname = copy.copy(edf_fname)
@@ -51,5 +51,9 @@ def target_file_name(edf_fname, type):
 
     if type == 'annot':
         return os.path.join(PROC_FOLDER, fname_parts[0], fname_parts[1], fname_parts[3].replace('.edf', '.annot'))
+
+    if type == 'processed':
+        assert extra_info is not None
+        return os.path.join(PROC_FOLDER, fname_parts[0], fname_parts[1], fname_parts[2], fname_parts[3].replace('.edf', '_' + extra_info + '_raw.fif'))
 
 

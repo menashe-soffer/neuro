@@ -7,7 +7,11 @@ import psutil
 import gc
 import datetime
 import time
+import copy
 from func_timeout import func_timeout, FunctionTimedOut
+#from multiprocessing import Pool
+import argparse
+
 
 #from my_montage_reader import my_montage_reader
 from my_mne_wrapper import my_mne_wrapper
@@ -16,29 +20,30 @@ from event_reader import event_reader
 from paths_and_constants import *
 
 import logging
-logging.basicConfig(filename=os.path.join(BASE_FOLDER, os.path.basename(__file__).replace('.py', '.log')), filemode='w', level=logging.DEBUG)
+#logging.basicConfig(filename=os.path.join(BASE_FOLDER, os.path.basename(__file__).replace('.py', '.log')), filemode='w', level=logging.DEBUG)
 
 
-# area of interest definition
-region_list = ['fusiform', 'inferiortemporal', 'lateraloccipital', 'lingual']
-hemisphere_sel = ['LR', 'LR', 'LR', 'both']
+# # area of interest definition
+# region_list = ['fusiform', 'inferiortemporal', 'lateraloccipital', 'lingual']
+# hemisphere_sel = ['LR', 'LR', 'LR', 'both']
 
-subject_list =  ['sub-R1001P', 'sub-R1002P', 'sub-R1003P', 'sub-R1006P', 'sub-R1010J', 'sub-R1034D', 'sub-R1054J', 'sub-R1059J', 'sub-R1060M', 'sub-R1065J',
-                 'sub-R1066P', 'sub-R1067P', 'sub-R1068J', 'sub-R1070T', 'sub-R1077T', 'sub-R1080E', 'sub-R1083J', 'sub-R1092J', 'sub-R1094T', 'sub-R1100D',
-                 'sub-R1106M', 'sub-R1108J', 'sub-R1111M', 'sub-R1112M', 'sub-R1113T', 'sub-R1118N', 'sub-R1123C', 'sub-R1124J', 'sub-R1125T', 'sub-R1134T',
-                 'sub-R1136N', 'sub-R1145J', 'sub-R1147P', 'sub-R1153T', 'sub-R1154D', 'sub-R1158T', 'sub-R1161E', 'sub-R1163T', 'sub-R1167M', 'sub-R1168T',
-                 'sub-R1170J', 'sub-R1171M', 'sub-R1172E', 'sub-R1174T', 'sub-R1177M', 'sub-R1195E', 'sub-R1196N', 'sub-R1201P', 'sub-R1202M', 'sub-R1204T',
-                 'sub-R1215M', 'sub-R1226D', 'sub-R1234D', 'sub-R1240T', 'sub-R1243T', 'sub-R1281E', 'sub-R1283T', 'sub-R1293P', 'sub-R1297T', 'sub-R1299T',
-                 'sub-R1302M', 'sub-R1308T', 'sub-R1309M', 'sub-R1310J', 'sub-R1311T', 'sub-R1315T', 'sub-R1316T', 'sub-R1317D', 'sub-R1323T', 'sub-R1325C',
-                 'sub-R1328E', 'sub-R1331T', 'sub-R1334T', 'sub-R1336T', 'sub-R1337E', 'sub-R1338T', 'sub-R1341T', 'sub-R1345D', 'sub-R1346T', 'sub-R1350D',
-                 'sub-R1354E', 'sub-R1355T', 'sub-R1361C', 'sub-R1363T', 'sub-R1367D', 'sub-R1374T', 'sub-R1377M', 'sub-R1378T', 'sub-R1379E', 'sub-R1385E',
-                 'sub-R1386T', 'sub-R1387E', 'sub-R1391T', 'sub-R1394E', 'sub-R1396T', 'sub-R1405E', 'sub-R1415T', 'sub-R1416T', 'sub-R1420T', 'sub-R1422T',
-                 'sub-R1425D', 'sub-R1427T', 'sub-R1443D', 'sub-R1449T', 'sub-R1463E', 'sub-R1542J']
-#
-# work on all subjects, NOR ONLY SUBJECTS WITH MULTIPLE SESSION
-#
-import glob
-subject_list = [os.path.basename((s)) for s in glob.glob('E:/ds004789-download/sub-R*')]
+# subject_list =  ['sub-R1001P', 'sub-R1002P', 'sub-R1003P', 'sub-R1006P', 'sub-R1010J', 'sub-R1034D', 'sub-R1054J', 'sub-R1059J', 'sub-R1060M', 'sub-R1065J',
+#                  'sub-R1066P', 'sub-R1067P', 'sub-R1068J', 'sub-R1070T', 'sub-R1077T', 'sub-R1080E', 'sub-R1083J', 'sub-R1092J', 'sub-R1094T', 'sub-R1100D',
+#                  'sub-R1106M', 'sub-R1108J', 'sub-R1111M', 'sub-R1112M', 'sub-R1113T', 'sub-R1118N', 'sub-R1123C', 'sub-R1124J', 'sub-R1125T', 'sub-R1134T',
+#                  'sub-R1136N', 'sub-R1145J', 'sub-R1147P', 'sub-R1153T', 'sub-R1154D', 'sub-R1158T', 'sub-R1161E', 'sub-R1163T', 'sub-R1167M', 'sub-R1168T',
+#                  'sub-R1170J', 'sub-R1171M', 'sub-R1172E', 'sub-R1174T', 'sub-R1177M', 'sub-R1195E', 'sub-R1196N', 'sub-R1201P', 'sub-R1202M', 'sub-R1204T',
+#                  'sub-R1215M', 'sub-R1226D', 'sub-R1234D', 'sub-R1240T', 'sub-R1243T', 'sub-R1281E', 'sub-R1283T', 'sub-R1293P', 'sub-R1297T', 'sub-R1299T',
+#                  'sub-R1302M', 'sub-R1308T', 'sub-R1309M', 'sub-R1310J', 'sub-R1311T', 'sub-R1315T', 'sub-R1316T', 'sub-R1317D', 'sub-R1323T', 'sub-R1325C',
+#                  'sub-R1328E', 'sub-R1331T', 'sub-R1334T', 'sub-R1336T', 'sub-R1337E', 'sub-R1338T', 'sub-R1341T', 'sub-R1345D', 'sub-R1346T', 'sub-R1350D',
+#                  'sub-R1354E', 'sub-R1355T', 'sub-R1361C', 'sub-R1363T', 'sub-R1367D', 'sub-R1374T', 'sub-R1377M', 'sub-R1378T', 'sub-R1379E', 'sub-R1385E',
+#                  'sub-R1386T', 'sub-R1387E', 'sub-R1391T', 'sub-R1394E', 'sub-R1396T', 'sub-R1405E', 'sub-R1415T', 'sub-R1416T', 'sub-R1420T', 'sub-R1422T',
+#                  'sub-R1425D', 'sub-R1427T', 'sub-R1443D', 'sub-R1449T', 'sub-R1463E', 'sub-R1542J']
+# #
+# # work on all subjects, NOR ONLY SUBJECTS WITH MULTIPLE SESSION
+# #
+# import glob
+# subject_list = [os.path.basename((s)) for s in glob.glob(os.path.join(BASE_FOLDER, 'sub-R*'))]
+# subject_list = np.sort(subject_list)
 #
 
 
@@ -99,7 +104,7 @@ def read_edf_and_mark_bad_chans_and_segs(path):
     ch_names = mne_wrapper.get_mne().ch_names
     fs = mne_wrapper.get_mne().info['sfreq']
 
-    MANUAL_PROCESSING = True
+    MANUAL_PROCESSING = False
     if MANUAL_PROCESSING:
         # past 1: simple statistics
         total_chans, exclude_chans = 0, 0
@@ -190,11 +195,18 @@ def read_edf_and_mark_bad_chans_and_segs(path):
             # now decide if the channel is to be excluded
             frac_bad_windows = (mcounts > 0).sum() / mcounts.size
             num_events = starts.size
-            logging.info('{}    channel {} {}    frac={:5.3f}  events={}'.format(subject, i_chan, ch_names[i_chan],
-                                                                          frac_bad_windows, num_events))
+            # print(path['electrodes'], '    F (199)   ', i_chan)
+            # print(path['electrodes'], '    F (200)   ', i_chan, ch_names[i_chan])
+            # print(path['electrodes'], '    F (201)   ', i_chan, frac_bad_windows)
+            # print(path['electrodes'], '    F (202)   ', i_chan, num_events)
+            # print(path['electrodes'], '    logging =   ', logging)
+            # logging.info('{}    channel {} {}    frac={:5.3f}  events={}'.format(subject, i_chan, ch_names[i_chan],
+            #                                                               frac_bad_windows, num_events))
+            #print(path['electrodes'], '    F (203)   ', i_chan, frac_bad_windows, num_events)
             bad_channel_indicator[i_chan] = (frac_bad_windows > 0.05) or (num_events > 50)
             if bad_channel_indicator[i_chan]:  # simple_bad_ch_indicator[i_chan] or
                 logging.info('  exclude channel {} {}'.format(i_chan, ch_names[i_chan]))
+                # print('  exclude channel {} {}'.format(i_chan, ch_names[i_chan]))
             else:
                 description = 'bad_' + ch_names[i_chan]
                 event_type = 1000 + i_chan
@@ -247,6 +259,7 @@ def generate_epoched_version(path, mne_copy, event_obj, create_new=True, event_n
 
     epoched_fname = path['signals'].replace(BASE_FOLDER, PROC_FOLDER).replace('ieeg', event_name, 1).replace('.edf', '-epo.fif')
     if os.path.isfile(epoched_fname) and (not create_new):
+        # print(epoched_fname + 'ALREADY EXISTS')
         logging.info(epoched_fname + 'ALREADY EXISTS')
         return
 
@@ -349,6 +362,7 @@ def check_if_files_exist(src_path, event_names, force_override, verbose=True):
             exist_mask[i] = os.path.isfile(epoched_path)
             if exist_mask[i] and verbose:
                 logging.info(epoched_path + '  ALREADY EXISTS')
+                # print(epoched_path + '  ALREADY EXISTS')
 
     events_to_process = [event_names[i] for i in np.argwhere(np.logical_not(exist_mask)).flatten()]
     return exist_mask, events_to_process
@@ -398,12 +412,8 @@ class monitor_and_run_gc:
 
 
 
-gc_obj = monitor_and_run_gc()
-FORCE_OVERRIDE = False
-from tqdm import tqdm
-fail_list = []
-events_to_process = ['cntdwn']#['orient', 'dstrct', 'recall', 'cntdwn', 'list', 'rest']
-for subject in tqdm(subject_list):
+def process_subject(subject, events_to_process, FORCE_OVERRIDE, fail_list):
+
     print(datetime.datetime.now(), '\t:\t', subject)
     paths = path_utils.get_paths(subject=subject, mode='bipolar')
     for path in paths:
@@ -427,27 +437,83 @@ for subject in tqdm(subject_list):
                 read_success = False
             if read_success:
                 #
-                psd = psd_wrapper(mne_copy)
-                psd_fname = path['signals'].replace(BASE_FOLDER, PROC_FOLDER).replace('ieeg', 'PSD').replace('.edf', '_ave.fif')
-                os.makedirs(os.path.dirname(psd_fname), exist_ok=True)
-                try:
-                    psd.save(psd_fname, overwrite=FORCE_OVERRIDE)
-                except:
-                    pass
+                # psd = psd_wrapper(mne_copy)
+                # psd_fname = path['signals'].replace(BASE_FOLDER, PROC_FOLDER).replace('ieeg', 'PSD').replace('.edf', '_ave.fif')
+                # os.makedirs(os.path.dirname(psd_fname), exist_ok=True)
+                # try:
+                #     #print('(452)    try  ', psd_fname)
+                #     psd.save(psd_fname, overwrite=FORCE_OVERRIDE)
+                #     #print('(454)      ', psd_fname)
+                # except:
+                #     print('(456)    failed ', psd_fname)
+                #     pass
                 #
                 for event_name in events_to_process_for_session:
                     try:
-                         generate_epoched_version(path, mne_copy=mne_copy, event_obj=event_obj, create_new=FORCE_OVERRIDE, event_name=event_name)
+                        #print('(466)    before ', path)
+                        generate_epoched_version(path, mne_copy=mne_copy, event_obj=event_obj, create_new=FORCE_OVERRIDE, event_name=event_name)
                     except:
                             fail_list.append(path['signals'] + ' : ' + event_name)
                             logging.warning('FAILED TO GENERATE .fif for {} FROM   {}'.format(event_name, path['signals']))
 
             # # monitor and maintain gc
             # gc_obj.__ceil__()
+    return [fail_list]
 
-if len(fail_list) > 0:
-    print('FAILED TO GENERATE THE FOLLOWING FILES:')
-    for fname in fail_list:
-        print('\t', fname)
 
-#print('total channels:   {}   excluded channels:  {}'.format(total_chans, exclude_chans))
+
+if __name__ == '__main__':
+    
+    #subject_list = ['sub-R1161E']
+    gc_obj = monitor_and_run_gc()
+    FORCE_OVERRIDE = True
+    #from tqdm import tqdm
+    fail_list = []
+    events_to_process = ['cntdwn', 'orient', 'dstrct', 'recall', 'list', 'rest']
+    IS_CLUSTER = False
+    import glob
+    subject_list = [os.path.basename((s)) for s in glob.glob(os.path.join(BASE_FOLDER, 'sub-R*'))]
+    subject_list = np.sort(subject_list)
+
+    # Parse command-line arguments for partitioning
+    parser = argparse.ArgumentParser(description='Process data folders in parallel.')
+    parser.add_argument('--partition-id', type=int, default=0, help='The ID of the partition to process (0-indexed).')
+    parser.add_argument('--num-partitions', type=int, default=1, help='The total number of partitions.')
+    
+    args = parser.parse_args()
+    
+    if args.num_partitions > 1:
+        subject_list = subject_list[args.partition_id::args.num_partitions]
+    # print(subject_list)
+    # assert False
+    # logging.basicConfig(filename=os.path.join(BASE_FOLDER, os.path.basename(__file__).replace('.py', '.{}.log'.format(args.partition_id))), 
+    #                     filemode='w', level=logging.DEBUG)
+    logging.basicConfig(filename=os.path.join(HOME_DIR, 'logs', os.path.basename(__file__).replace('.py', '.{}.log'.format(args.partition_id))), 
+                        filemode='w', level=logging.DEBUG)
+    
+
+
+    if not IS_CLUSTER:
+        
+        for subject in subject_list:#tqdm(subject_list):
+            
+            fail_list = process_subject(subject, events_to_process, FORCE_OVERRIDE, fail_list)
+
+
+    # if IS_CLUSTER:
+        
+    #     # Create a list of tuples: [(path, param1, param2), (path, param1, param2), ...]
+    #     tasks = [(subject, events_to_process, FORCE_OVERRIDE, copy.copy(fail_list), True) for subject in subject_list]
+        
+    #     num_cores = 4
+    #     print(f"Starting parallel processing on {num_cores} cores...")
+    #     with Pool(num_cores) as p:
+    #         fail_list = p.starmap(process_subject, tasks)
+        
+
+    if len(fail_list) > 0:
+        print('FAILED TO GENERATE THE FOLLOWING FILES:')
+        for fname in fail_list:
+            print('\t', fname)
+
+    #print('total channels:   {}   excluded channels:  {}'.format(total_chans, exclude_chans))

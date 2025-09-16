@@ -171,7 +171,7 @@ class event_reader:
         # after recs
         recall_ends = np.array([e['end'] for e in recalls])
         for recall_end in recall_ends:
-            idx = np.argwhere(recall_end == all_onsets).squeeze()
+            idx = np.argwhere(recall_end == all_onsets).flatten()[-1]
             if idx < self.df.shape[0] - 1:
                 next_event = self.df.iloc[idx + 1]
                 #print(recall_end, next_event['trial_type'], next_event['onset'], next_event['onset'] - recall_end)

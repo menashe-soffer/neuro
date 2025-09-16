@@ -75,6 +75,7 @@ def apply_gamma_responces(epoched, epoch_mask=None, gamma_band=[60, 160], keep_r
     band_pwr = np.zeros((epoched.get_data().shape[1], centers.size))
     for i_cent, center in enumerate(centers):
         centered = epoched.copy().apply_hilbert()
+        #centered = epoched.copy().filter(l_freq=10.0, h_freq=None).apply_hilbert()
         cmplx_signal = centered.get_data()
         shift_signal = np.exp(-1j * 2 * np.pi * center * np.arange(cmplx_signal.shape[-1]) / fs)
         for i_epoch in range(cmplx_signal.shape[0]):
@@ -98,6 +99,7 @@ def apply_gamma_responces(epoched, epoch_mask=None, gamma_band=[60, 160], keep_r
                 for i_chan in range(cmplx_signal.shape[1]):
                     centered._data[i_epoch, i_chan] /= np.sqrt(band_pwr[i_chan, i_cent])
                     processed._data[i_epoch, i_chan] += np.abs(centered._data[i_epoch, i_chan]) / centers.size
+                    # processed._data[i_epoch, i_chan] += np.abs(centered._data[i_epoch, i_chan]) * centers[i_cent] / centers.size
         #
     #     # for DEBUG (confirm normalizing)
     #     if i_cent == 0:
@@ -374,7 +376,7 @@ if __name__ == '__main__':
 
     SHOW, SHOW_ONLY = False, False
     assert SHOW or (not SHOW_ONLY)
-    TYPE_TO_PROCESS = 'cntdwn'# 'list'#'rest'#'recall'#'dstrct'#'orient'#
+    TYPE_TO_PROCESS = 'cntdwn'# 'list'#'rest'#'dstrct'#'orient'#'recall'#
     file_type, event_type, sub_event_type, proc_params, proc_params_sub = get_params_for_event_type(TYPE_TO_PROCESS)
 
     list = find_epoched_subject(base_folder=base_folder, epoched_folder=epoched_folder, type=file_type, min_sessions=1)
@@ -384,7 +386,7 @@ if __name__ == '__main__':
     for subject_item in tqdm.tqdm(list):
         for epoched_file in subject_item['epoched']:
             try:
-                all_subsets = [range(i, i+1) for i in range(18)] + [range(i, i+3) for i in range(0, 18, 3)]
+                all_subsets = [range(i, i+2) for i in range(0, 18, 2)]+[range(i, i+1) for i in range(18)] + [range(i, i+3) for i in range(0, 18, 3)]
                 process_epoched_file(epoched_file, event_type, sub_event_type, proc_params, proc_params_sub, SHOW, SHOW_ONLY, subsets=all_subsets)
                                     #[range(0, 1), range(1, 2), range(2, 3), range(3, 4), range(4, 5), range(5, 6)])#, range(0, 2), range(0, 4), range(0, 8)])
             except:
