@@ -38,7 +38,7 @@ def get_subject_list():
 
 
 
-def target_file_name(edf_fname, type, extra_info=None):
+def target_file_name(edf_fname, type, proc_type=None, event_type=None, create_folder=False):
 
     #
     edf_fname = copy.copy(edf_fname)
@@ -50,10 +50,24 @@ def target_file_name(edf_fname, type, extra_info=None):
     fname_parts = fname_parts[::-1]
 
     if type == 'annot':
-        return os.path.join(PROC_FOLDER, fname_parts[0], fname_parts[1], fname_parts[3].replace('.edf', '.annot'))
+        tgt_fname = os.path.join(PROC_FOLDER, fname_parts[0], fname_parts[1], fname_parts[3].replace('.edf', '.annot'))
+
+    # if type == 'processed':
+    #     assert extra_info is not None
+    #     return os.path.join(PROC_FOLDER, fname_parts[0], fname_parts[1], fname_parts[2], fname_parts[3].replace('.edf', '_' + extra_info + '_raw.fif'))
 
     if type == 'processed':
-        assert extra_info is not None
-        return os.path.join(PROC_FOLDER, fname_parts[0], fname_parts[1], fname_parts[2], fname_parts[3].replace('.edf', '_' + extra_info + '_raw.fif'))
+        assert proc_type is not None
+        tgt_fname = os.path.join(PROC_FOLDER, fname_parts[0], fname_parts[1], proc_type, fname_parts[3].replace('.edf', '_raw.fif'))
+
+    if type == 'epoched':
+        assert proc_type is not None
+        assert event_type is not None
+        tgt_fname = os.path.join(PROC_FOLDER, fname_parts[0], fname_parts[1], proc_type, fname_parts[3].replace('.edf', '_{}_epo.fif'.format(event_type)))
+
+    if create_folder:
+        os.makedirs(os.path.dirname(tgt_fname), exist_ok=True)
+
+    return tgt_fname
 
 

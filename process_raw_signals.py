@@ -82,7 +82,7 @@ if __name__ == '__main__':
         paths = path_utils.get_paths(subject, mode='bipolar')
         for path in paths:
             mode_str = '{}_{}_{}'.format(args.type, args.flow, args.fhigh)
-            tgt_fname = path_utils.target_file_name(path['signals'], 'processed', extra_info=mode_str)
+            tgt_fname = path_utils.target_file_name(path['signals'], 'processed', proc_type=mode_str)
 
             if FORCE_OVERRIDE or (not os.path.isfile(tgt_fname)):
                 try:
