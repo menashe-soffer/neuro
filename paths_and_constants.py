@@ -10,6 +10,7 @@ if 'wexac' in hostname:
     PROC_FOLDER = os.path.join('/home/labs/malach/sofferme', 'dr-processed')
     LOG_FOLDER = os.path.join('/home/labs/malach/sofferme', 'logs')
     TEMP_FOLDER = os.path.join('/home/labs/malach/sofferme', 'dr-temp')
+    IDXS_FOLDER = os.path.join('/home/labs/malach/sofferme', 'dr-indexes')
     HOME_DIR = os.path.expanduser('~')
     IS_CLUSTER = True
 else:
@@ -17,6 +18,7 @@ else:
     PROC_FOLDER = 'E:/dr-processed'
     LOG_FOLDER = 'E:/logs'
     TEMP_FOLDER = 'E:/dr-temp'
+    IDXS_FOLDER = 'E:/dr-indexes'
     HOME_DIR = 'E:'
     IS_CLUSTER = False
 

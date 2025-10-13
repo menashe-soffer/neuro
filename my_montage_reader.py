@@ -43,8 +43,11 @@ class my_montage_reader:
                     admit = False
                     if hemisphere_sel_list[i_region] == 'both':
                         admit, key = True, region
-                    if hemisphere_sel_list[i_region].find(line['hemisphere']) > -1:
-                        admit, key = True, region + '-' + line['hemisphere']
+                    try:
+                        if hemisphere_sel_list[i_region].find(line['hemisphere']) > -1:
+                            admit, key = True, region + '-' + line['hemisphere']
+                    except:
+                        pass # probably line['hemisphere'] is corrupted
                     if admit:
                         electrode_list[key].append(dict({'name': line['name'], 'coords': np.array([line['x'], line['y'], line['z']]).reshape(3, 1), 'hemisphere': line['hemisphere']}))
 
