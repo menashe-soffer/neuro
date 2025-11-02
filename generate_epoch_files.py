@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import os
 import mne
@@ -11,7 +12,7 @@ from paths_and_constants import *
 #from path_utils import get_paths, get_subject_list
 import path_utils
 from my_mne_wrapper import my_mne_wrapper
-
+from data_availability import data_availability
 
 
 if __name__ == '__main__':
@@ -28,6 +29,9 @@ if __name__ == '__main__':
 
     subject_list = path_utils.get_subject_list()
     subject_list = np.sort(subject_list)[args.partition_id::args.num_partitions]
+    
+    data_availability_obj = data_availability()
+    index_obj = []
 
     if args.event_type == 'CNTDWN':
         sub_description = 'DIGIT'
@@ -38,7 +42,7 @@ if __name__ == '__main__':
         sub_description = 'WORD'
         tmin, tmax = -2.5, 30.5 + 2.5
     if args.event_type == 'RECALL':
-        tmin, tmax = -2.5, 9 + 2.5
+        tmin, tmax = -2.5, 9 + 2.5 + 16
     if args.event_type == 'DSTRCT':
         tmin, tmax = -2.5, 9 + 2.5
     if args.event_type == 'REST':
@@ -55,19 +59,31 @@ if __name__ == '__main__':
             #print(raw_name, ' ==> ', epo_name)
 
             try:
+                # getting relative time
+                session = path['signals'][path['signals'].find('ses-'):][:5]
+                session_relative_time = data_availability_obj.data[subject]['sessions'][session]['relative timestamp']
                 mne_raw = mne.io.read_raw_fif(raw_name, verbose=False)
+                
                 # make the event list
                 events_for_epoching , src_event_id= mne.events_from_annotations(mne_raw, verbose=False)
                 src_event_id = src_event_id[args.event_type]
                 events_for_epoching = events_for_epoching[events_for_epoching[:, 2] == src_event_id]
                 events_for_epoching[:, 2] = EVENT_TYPES[args.event_type]
 
-                epoched = mne.Epochs(mne_raw, events=events_for_epoching, tmin=tmin, tmax=tmax, reject_by_annotation=True, verbose=False)
+                epoched = mne.Epochs(mne_raw, events=events_for_epoching, tmin=tmin, tmax=tmax, reject_by_annotation=True, verbose=False, baseline=None)
                 # epoched.plot()
                 # plt.show()
                 epoched.save(epo_name, overwrite=True, verbose=False)
+                #
+                # prepare indexes
+                index_obj.append({'subject': subject, 'session': session, 'relative time': session_relative_time, 
+                                 'filename': epo_name, 'contacts': set(epoched.ch_names) ^ set(epoched.info['bads']), 'num_epochs': epoched.get_data().shape[0]})
+                #
                 logging.info('{}, {} epochs,      {} bad channels'.format(epo_name, events_for_epoching.shape[0], len(epoched.info['bads'])))
                 print('{}, {} epochs,      {} bad channels'.format(epo_name, events_for_epoching.shape[0], len(epoched.info['bads'])))
             except:
                 logging.warning('FAIL to generate {}'.format(epo_name))
                 print('FAIL to generate {}'.format(epo_name))
+                
+    dataframe = pd.DataFrame(index_obj)
+    dataframe.to_csv(os.path.join(IDXS_FOLDER, 'epochs_{}_{}.csv'.format(args.event_type, args.proc_type)))

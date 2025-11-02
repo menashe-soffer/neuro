@@ -180,81 +180,30 @@ def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True,
         for i in range(1, rdm_size):
             havg[i, :i] = 0
         sns.heatmap(np.round(havg, decimals=2), vmin=vmin, vmax=vmax, ax=ax_folded, annot=True, square=True, cbar=False, xticklabels=xticks, yticklabels=yticks)
+        fig_pc.savefig(os.path.join(os.path.expanduser('~'), 'figs', title + '_pc.pdf'))
+        #fig_folded.savefig(os.path.join(os.path.expanduser('~'), 'figs', title + '_folded.pdf'))
 
-
-
+    
     if show:
         plt.show()
 
 
-# def read_data_single_two_sessions_single_epoch(contact_list, subject_ids, v_samp_per_sec, active_contacts_only=False, esel=0, cmprs=True):
 
-#     id_vector = np.zeros(len(contact_list), dtype=int)
-#     # resolution_sec = 0.5
-#     # data_mat = np.zeros((2, len(contact_list), int(V_SAMP_PER_SEC * 11)))
-#     # boundries_sec = np.linspace(start=0-1, stop=11-1, num=data_mat.shape[-1] + 1)
-#     data_mat = np.zeros((2, len(contact_list), int(v_samp_per_sec * 12)))
-#     boundries_sec = np.linspace(start=0 - 1, stop=11, num=data_mat.shape[-1] + 1)
-#     running_first, running_second = ' ', ' '
-#     dst_idx = 0
-#     active_contact_list = []
-#     active_contact_mask = np.zeros(len(contact_list), dtype=bool)
-#     for i_cntct, contact in enumerate(contact_list):
-#         if (running_first != contact['first'][esel]) or (running_second != contact['second'][esel]):
-#             running_first, running_second = contact['first'][esel], contact['second'][esel]
-#             running_subject_id = subject_ids[contact['subject']]
-#             first_data = mne.read_evokeds(running_first, verbose=False)[0]
-#             # first_data.apply_baseline((-0.5, -0.1))
-#             first_p_vals, first_increase, _ = calculate_p_values(first_data.copy(), show=False, pre_intvl=[-0.95, -0.1], post_intval=[0.1+1*2, 0.6+1*8.5])
-#             second_data = mne.read_evokeds(running_second, verbose=False)[0]
-#             # second_data.apply_baseline((-0.5, -0.1))
-#             second_p_vals, second_increase, _ = calculate_p_values(second_data.copy(), show=False, pre_intvl=[-0.95, -0.1], post_intval=[0.1+1*2, 0.6+1*8.5])
-#             masks = np.zeros((boundries_sec.size - 1, first_data.times.shape[-1]), dtype=bool)
-#             for i in range(data_mat.shape[-1]):
-#                 masks[i] = (first_data.times >= boundries_sec[i]) * (first_data.times < boundries_sec[i + 1])
-#             contact_activity_1 = (first_p_vals < 0.05) #* first_increase
-#             contact_activity_2 = (second_p_vals < 0.05) #* second_increase
-#         #
-#         # now read the data in the requested resolution
-#         src_idx1 = np.argwhere([contact['name'] == c for c in first_data.ch_names]).squeeze()
-#         src_idx2 = np.argwhere([contact['name'] == c for c in second_data.ch_names]).squeeze()
-#         not_bad1 = np.logical_not(np.any([contact['name'] == b for b in first_data.info['bads']]))#True#
-#         not_bad2 = np.logical_not(np.any([contact['name'] == b for b in second_data.info['bads']]))#True#
-#         not_bad1 = not_bad1 and np.any(first_data._data[src_idx1] != 0)  # !!!   PATCH    !!!
-#         not_bad2 = not_bad2 and np.any(second_data._data[src_idx2] != 0)  # !!!   PATCH    !!!
-#         not_bad1 = not_bad1 and np.abs(first_data._data[src_idx1]).max() < 3  # !!!   PATCH    !!!
-#         not_bad2 = not_bad2 and np.abs(second_data._data[src_idx2]).max() < 3  # !!!   PATCH    !!!
-#         contact_is_active = (contact_activity_1[src_idx1] or contact_activity_2[src_idx2])
-#         if ((contact_is_active or (not active_contacts_only)) and
-#                 (src_idx1.size == 1) and (src_idx2.size == 1) and not_bad1 and not_bad2):
-#             id_in_mat = dst_idx if cmprs else i_cntct
-#             for i in range(data_mat.shape[-1]):
-#                 data_mat[0, id_in_mat, i] = (first_data._data[src_idx1] * masks[i]).sum() / masks[i].sum()
-#                 data_mat[1, id_in_mat, i] = (second_data._data[src_idx1] * masks[i]).sum() / masks[i].sum()
-#             id_vector[id_in_mat] = running_subject_id
-#             active_contact_list.append({'subject': contact['subject'], 'name': contact['name']})
-#             active_contact_mask[i_cntct] = True
-#             dst_idx += 1
 
-#     if cmprs:
-#         data_mat = data_mat[:, :dst_idx]
 
-#     #print(active_contact_mask.sum())
-#     return data_mat, active_contact_mask, dict({'active_contact_list': active_contact_list, 'p_values_first': first_p_vals, 'p_values_second': second_p_vals})
 
-def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1, v_samp_per_sec=1, norm_baseline=[-0.5, 0.05]):
+def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1, boundary_sec=np.arange(start=-1, stop=12, step=1), norm_baseline=[-0.5, -0.05], random_shift=False):
     
+    # the returned array has dimensions (epoch, contact, time)
     
-    def resample_epoch(data, fs, tscale, tgt_fs):
+    def resample_epoch(data, fs, tscale, boundary_sec):
         
-        chunk = int(fs / tgt_fs)
-        boundaries = np.arange(start=0, stop=data.shape[-1], step=chunk)
-        new_tscale = (tscale[boundaries[:-1]] + tscale[boundaries[1:]]) / 2
-        resampled = np.zeros((data.shape[0], data.shape[1], new_tscale.size))
-        for i, (start, stop) in enumerate(zip(boundaries[:-1], boundaries[1:])):
-            resampled[:, :, i] = data[:, :, start:stop].mean(axis=-1)
+        resampled = np.zeros((data.shape[0], data.shape[1], boundary_sec.size - 1))
+        for i, (start, stop) in enumerate(zip(boundary_sec[:-1], boundary_sec[1:])):
+            mask = (tscale >= start) * (tscale < stop)
+            resampled[:, :, i] = data[:, :, mask].mean(axis=-1)
         
-        return new_tscale, resampled
+        return resampled
     
         
     for i_subject in range(epoch_file_list.shape[0]):
@@ -266,24 +215,33 @@ def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1, v_sam
         tscale = mne_obj.times
         cmask = [name in contacts for name in mne_obj.ch_names]
         subject_signals = mne_obj.get_data()[first_epoch:last_epoch, cmask]
-        new_tscale, resampled = resample_epoch(subject_signals, fs, tscale, v_samp_per_sec)
+        nmask = (tscale >= norm_baseline[0]) * (tscale <= norm_baseline[-1])
+        #
+        #
+        if random_shift:
+            tol = tscale[-1] - boundary_sec[-1]
+            tshift = np.random.uniform(low=0, high=tol)
+        else:
+            tshift = 0
+        resampled = resample_epoch(subject_signals, fs, tscale, boundary_sec + tshift)
+        #
         if i_subject == 0:
             data = np.copy(resampled)
-            nmask = (tscale >= norm_baseline[0]) * (tscale <= norm_baseline[-1])
-            norms = subject_signals[:, :, nmask].std(axis=-1)
+            #nmask = (tscale >= norm_baseline[0]) * (tscale <= norm_baseline[-1])
+            #norms = subject_signals[:, :, nmask].std(axis=-1)
+            norms = np.linalg.norm(subject_signals[:, :, nmask], axis=-1) / np.sqrt(nmask.sum())
         else:
             data = np.concatenate((data, np.copy(resampled)), axis=1)
-            norms = np.concatenate((norms, subject_signals[:, :, nmask].std(axis=-1)), axis=1)
+            norms = np.concatenate((norms, np.linalg.norm(subject_signals[:, :, nmask], axis=-1) / np.sqrt(nmask.sum())), axis=1)
         
-        # normalize
-        nominal_nf = 1 / np.median(norms)
-        max_nf = 3 * nominal_nf
-        nf = np.minimum(1 / norms, max_nf)
-        data = np.repeat(nf[:, :, np.newaxis], data.shape[-1], axis=2) * data
+    # normalize
+    nominal_nf = 1 / np.median(norms)
+    max_nf = 3 * nominal_nf
+    nf = np.minimum(1 / norms, max_nf)
+    data = np.repeat(nf[:, :, np.newaxis], data.shape[-1], axis=2) * data
         
-        
-        
-    return new_tscale, data
+
+    return data
 
 
 
@@ -513,6 +471,7 @@ def show_corr_diagonals(csac_list, rep_pcors_list, show=False):
     if show:
         plt.show()
     #
+    return fig
 
 
 def show_relational_codes(R0_list, R1_list, show=False):
@@ -552,6 +511,8 @@ def show_relational_codes(R0_list, R1_list, show=False):
 
     if show:
         plt.show()
+    
+    return fig
 
 
 
