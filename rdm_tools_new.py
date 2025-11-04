@@ -18,29 +18,43 @@ import logging
 # logging.basicConfig(filename='C:/Users/menas/OneDrive/Desktop/openneuro/temp/generate_rdms_wrapper.log', filemode='w', level=logging.DEBUG)
 
 
-def consistant_random_grouping(data, num_groups=2, pindex=2, axis=0, padding=False):
 
-    # if padding is True, the output vectors sizes will be number of contacts, the "missing" contacts are not omitted but zeroed
-    n = data.shape[axis]
-    grp_size = int(n / num_groups)
-    dim_perm = np.arange(data.ndim)
-    dim_perm[0], dim_perm[axis] = axis, 0
-    data = data.transpose(dim_perm) # bring the axis of grouping to the 0
-    store_seed = np.random.seed()
-    np.random.seed(pindex)
-    p = np.random.permutation(n)
-    np.random.seed(store_seed)
-    groups, i0 = [], 0
-    for i_grp in range(num_groups):
-        if padding:
-            groups.append(np.zeros(data.shape))
-            groups[-1][p[i0:i0+grp_size]] = data[p[i0:i0+grp_size]]
-            groups[-1] = groups[-1].transpose(dim_perm)
-        else:
-            groups.append(data[p[i0:i0+grp_size]].transpose(dim_perm))
-        i0 += grp_size
 
-    return groups
+
+def mysavefig(subfolder=None, name=None, fig=None):
+    
+    folder = os.path.join(os.path.expanduser('~'), 'figs')
+    if subfolder is not None:
+        folder = os.path.join(folder, subfolder)
+    os.makedirs(folder, exist_ok=True)
+    fname = os.path.join(folder, name + '.pdf')
+    
+    fig.savefig(fname)
+
+
+# def consistant_random_grouping(data, num_groups=2, pindex=2, axis=0, padding=False):
+
+#     # if padding is True, the output vectors sizes will be number of contacts, the "missing" contacts are not omitted but zeroed
+#     n = data.shape[axis]
+#     grp_size = int(n / num_groups)
+#     dim_perm = np.arange(data.ndim)
+#     dim_perm[0], dim_perm[axis] = axis, 0
+#     data = data.transpose(dim_perm) # bring the axis of grouping to the 0
+#     store_seed = np.random.seed()
+#     np.random.seed(pindex)
+#     p = np.random.permutation(n)
+#     np.random.seed(store_seed)
+#     groups, i0 = [], 0
+#     for i_grp in range(num_groups):
+#         if padding:
+#             groups.append(np.zeros(data.shape))
+#             groups[-1][p[i0:i0+grp_size]] = data[p[i0:i0+grp_size]]
+#             groups[-1] = groups[-1].transpose(dim_perm)
+#         else:
+#             groups.append(data[p[i0:i0+grp_size]].transpose(dim_perm))
+#         i0 += grp_size
+
+#     return groups
 
 
 
@@ -87,7 +101,7 @@ def calc_rdm(data, rdm_size, pre_ignore, delta_time_smple, corr_mode='p'):
 
 
 
-def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True, show_hmaps=True, show=True, ovrd_bar_scale=None, ovrd_heat_scale=None):
+def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True, show_hmaps=True, show=True, ovrd_bar_scale=None, ovrd_heat_scale=None, output_folder=None):
 
     num_splits = rdms.shape[0]
     rdm_size = rdms.shape[-1]
@@ -180,7 +194,8 @@ def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True,
         for i in range(1, rdm_size):
             havg[i, :i] = 0
         sns.heatmap(np.round(havg, decimals=2), vmin=vmin, vmax=vmax, ax=ax_folded, annot=True, square=True, cbar=False, xticklabels=xticks, yticklabels=yticks)
-        fig_pc.savefig(os.path.join(os.path.expanduser('~'), 'figs', title + '_pc.pdf'))
+        #fig_pc.savefig(os.path.join(os.path.expanduser('~'), 'figs', title + '_pc.pdf'))
+        mysavefig(fig=fig_pc, subfolder=output_folder, name=title + '_pc')
         #fig_folded.savefig(os.path.join(os.path.expanduser('~'), 'figs', title + '_folded.pdf'))
 
     
@@ -192,7 +207,9 @@ def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True,
 
 
 
-def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1, boundary_sec=np.arange(start=-1, stop=12, step=1), norm_baseline=[-0.5, -0.05], random_shift=False):
+def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1, 
+                             boundary_sec=np.arange(start=-1, stop=12, step=1),
+                             norm_baseline=[-0.5, -0.05], random_shift=False, ovf_thd=3):
     
     # the returned array has dimensions (epoch, contact, time)
     
@@ -239,9 +256,20 @@ def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1, bound
     max_nf = 3 * nominal_nf
     nf = np.minimum(1 / norms, max_nf)
     data = np.repeat(nf[:, :, np.newaxis], data.shape[-1], axis=2) * data
-        
+    
+    # detect bad contacts
+    mask_ovf = data > ovf_thd
+    bad_epoch_contact = mask_ovf.sum(axis=-1) > 0
+    bad_contact = bad_epoch_contact.sum(axis=0) > 0
+    for i_epoch in range(data.shape[0]):
+        for i_cntct in range(data.shape[1]):
+            data[i_epoch, i_cntct] *= (1. - bad_epoch_contact[i_epoch, i_cntct])
+    good_contact = np.logical_not(bad_contact)
+    #data_1 = data_1[:, good_contact, :]
+    print('use {:5.1f} percent of contacts'.format(100 * good_contact.mean()))
+       
 
-    return data
+    return data, good_contact
 
 
 
