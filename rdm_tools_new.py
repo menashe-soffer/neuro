@@ -30,6 +30,7 @@ def mysavefig(subfolder=None, name=None, fig=None):
     fname = os.path.join(folder, name + '.pdf')
     
     fig.savefig(fname)
+    plt.close(fig)
 
 
 # def consistant_random_grouping(data, num_groups=2, pindex=2, axis=0, padding=False):
@@ -138,7 +139,7 @@ def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True,
         np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size), np.zeros(bins.size)
 
     if show_hists:
-        fig_husts, ax_hists = plt.subplots(1, 1)
+        fig_hists, ax_hists = plt.subplots(1, 1)
         ax_hists.set_title(title)
         for t1 in range(rdm_size):
             for t2 in range(t1, rdm_size):
@@ -197,6 +198,23 @@ def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True,
         #fig_pc.savefig(os.path.join(os.path.expanduser('~'), 'figs', title + '_pc.pdf'))
         mysavefig(fig=fig_pc, subfolder=output_folder, name=title + '_pc')
         #fig_folded.savefig(os.path.join(os.path.expanduser('~'), 'figs', title + '_folded.pdf'))
+        
+        try:
+            plt.close(fig_bars)
+        except:
+            pass
+        try:
+            plt.close(fig_hists)
+        except:
+            pass
+        try:
+            plt.close(fig_havg)
+        except:
+            pass
+        try:
+            plt.close(fig_folded)
+        except:
+            pass
 
     
     if show:
@@ -209,7 +227,7 @@ def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True,
 
 def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1, 
                              boundary_sec=np.arange(start=-1, stop=12, step=1),
-                             norm_baseline=[-0.5, -0.05], random_shift=False, ovf_thd=3):
+                             norm_baseline=[-0.5, -0.05], random_shift=False, ovf_thd=3, verbose=True):
     
     # the returned array has dimensions (epoch, contact, time)
     
@@ -266,7 +284,8 @@ def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1,
             data[i_epoch, i_cntct] *= (1. - bad_epoch_contact[i_epoch, i_cntct])
     good_contact = np.logical_not(bad_contact)
     #data_1 = data_1[:, good_contact, :]
-    print('use {:5.1f} percent of contacts'.format(100 * good_contact.mean()))
+    if verbose:
+        print('use {:5.1f} percent of contacts'.format(100 * good_contact.mean()))
        
 
     return data, good_contact
@@ -520,6 +539,7 @@ def show_relational_codes(R0_list, R1_list, show=False):
     lower = min((R0_avg - R0_sem)[np.logical_not(np.isnan(R0_avg))].min(), (R1_avg - R1_sem)[np.logical_not(np.isnan(R1_avg))].min())
     upper = max((R0_avg + R1_sem)[np.logical_not(np.isnan(R0_avg))].max(), (R1_avg + R1_sem)[np.logical_not(np.isnan(R1_avg))].max())
     ystep = 0.1
+    lower, upper = max(lower, -1), min(upper, 1)
     lower, upper = np.floor(lower / ystep) * ystep, np.ceil(upper / ystep) * ystep
     for i in range(num_codes):
         for ii in range(2):

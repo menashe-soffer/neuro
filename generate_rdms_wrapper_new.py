@@ -14,6 +14,9 @@ def split_session_to_fake_sessions(contact_list, segment_size=3, pair_idx=1):
     
 def do_rdm_analisys(data_1, data_2, epoch_count, output_folder):
     
+    CROSS_SESSION_CMODE = 'p'
+    AUTO_OR_CROSS_ACTIVATION = "CROSS"  # "AUTO": generate session rdm from single epoch set (diagonal = 1); "CROSS": cross-correlate two epoch sets
+
     # make a dictionary og integer subject id's
     subject_ids = dict()
     id = 0
@@ -21,8 +24,6 @@ def do_rdm_analisys(data_1, data_2, epoch_count, output_folder):
         if not contact['subject'] in subject_ids.keys():
             subject_ids[contact['subject']] = id
             id += 1
-
-    AUTO_OR_CROSS_ACTIVATION = "CROSS"  # "AUTO": generate session rdm from single epoch set (diagonal = 1); "CROSS": cross-correlate two epoch sets
 
     data_mat = np.concatenate((data_1[np.newaxis, :], data_2[np.newaxis, :]))
     pair_cnt = 0
@@ -72,7 +73,7 @@ def do_rdm_analisys(data_1, data_2, epoch_count, output_folder):
                 R0 += R0_
                 R1 += R1_
             pair_cnt += 1
-            print('pair no. {},  {} {}'.format(pair_cnt, epoch_subsets[i_sbst0], epoch_subsets[i_sbst1]))
+            print('pair no. {},\t  {} {}'.format(pair_cnt, epoch_subsets[i_sbst0], epoch_subsets[i_sbst1]))
             csac_list.append(csac_)
             R0_list.append(R0_)
             R1_list.append(R1_)
@@ -210,51 +211,90 @@ def do_rdm_analisys(data_1, data_2, epoch_count, output_folder):
 
 
 
+
+def get_contact_subset(data_1C, data_2C, data_1R, data_2R, contact_info, USE='ALL', SPLIT='ALL'):
+
+    # now find "responsive" contacts
+    #if USE != 'ALL':
+    psth_by_cntct = (data_1C.mean(axis=0) + data_2C.mean(axis=0)) / 2
+    rr = np.median(psth_by_cntct[:, 1:], axis=-1) / psth_by_cntct[:, 0]
+    if USE == 'ALL':
+        use_mask =np.ones(rr.shape, dtype='bool')
+    if USE == 'NON_RESP':
+        thd = np.quantile(rr, 1/3)
+        use_mask = rr < thd
+    if USE == 'RESP':
+        thd = np.quantile(rr, 2/3)
+        use_mask = rr > thd
+    data_1C_ = data_1C[:, use_mask]
+    data_2C_ = data_2C[:, use_mask]
+    data_1R_ = data_1R[:, use_mask]
+    data_2R_ = data_2R[:, use_mask]
+    contact_info_ = [contact_info[i] for i in np.argwhere(use_mask).flatten().astype(int)]
+    
+    # split
+    if SPLIT == 'ODD':
+        split_mask = ((-1) ** np.arange(len(contact_info_))) > 0
+    if SPLIT == 'EVEN':
+        split_mask = ((-1) ** np.arange(len(contact_info_))) < 0
+    if SPLIT != 'ALL':
+        data_1C_ = data_1C_[:, split_mask]
+        data_2C_ = data_2C_[:, split_mask]
+        data_1R_ = data_1R_[:, split_mask]
+        data_2R_ = data_2R_[:, split_mask]
+        contact_info_ = [contact_info_[i] for i in np.argwhere(split_mask).flatten().astype(int)]
+    
+    return data_1C_, data_2C_, data_1R_, data_2R_, contact_info_
+
+
+
+
+
 if __name__ == '__main__':
 
     V_SAMP_PER_SEC = 1
-    CORR_WINDOW_SEC = 1
-    SHOW_TIME_PER_CONTACT = False
-    ACTIVE_CONTACTS_ONLY = False
-    # AUTO_OR_CROSS_ACTIVATION = "CROSS"  # "AUTO": generate session rdm from single epoch set (diagonal = 1); "CROSS": cross-correlate two epoch sets
-    EPOCH_SUBSET = 'e0-e5'#
+    # CORR_WINDOW_SEC = 1
+    # SHOW_TIME_PER_CONTACT = False
+    # ACTIVE_CONTACTS_ONLY = False
+    AUTO_OR_CROSS_ACTIVATION = "CROSS"  # "AUTO": generate session rdm from single epoch set (diagonal = 1); "CROSS": cross-correlate two epoch sets
+    # EPOCH_SUBSET = 'e0-e5'#
     # OTHER_EPOCH_SUBSET = 'e6-e11' if AUTO_OR_CROSS_ACTIVATION == "CROSS" else EPOCH_SUBSET# None#for making self-session rdms
-    AVG_MANY_EPOCHS = ['e0-e0', 'e1-e1', 'e2-e2', 'e3-e3', 'e4-e4', 'e5-e5', 'e6-e6', 'e7-e7', 'e8-e8', 'e9-e9', 'e10-e10', 'e11-e11', 'e12-e12', 'e13-e13', 'e14-e14', 'e15-e15', 'e16-e16', 'e17-e17']
+    # AVG_MANY_EPOCHS = ['e0-e0', 'e1-e1', 'e2-e2', 'e3-e3', 'e4-e4', 'e5-e5', 'e6-e6', 'e7-e7', 'e8-e8', 'e9-e9', 'e10-e10', 'e11-e11', 'e12-e12', 'e13-e13', 'e14-e14', 'e15-e15', 'e16-e16', 'e17-e17']
     #AVG_MANY_EPOCHS = ['e0-e2', 'e3-e5', 'e6-e8', 'e9-e11', 'e12-e14', 'e15-e17']
     MIN_TGAP, MAX_TGAP = 60, 144#144, 336#24, 48
-    SELECT_CONTACTS_BY_PERIODICITY = 0 # 0: ignore periodicity, 1: select periodic contacts, -1: select NON-periodic contacts
+    # SELECT_CONTACTS_BY_PERIODICITY = 0 # 0: ignore periodicity, 1: select periodic contacts, -1: select NON-periodic contacts
     CONTACT_SPLIT = None # None: use all, 0: even contacts only, 1: odd contacts only
-    PROCESS_QUADS = False
+    # PROCESS_QUADS = False
     event_type = 'CNTDWN' # one of: 'CNTDWN', 'RECALL', 'DSTRCT', 'REST'
-    CROSS_SESSION_CMODE = 'p'
     #
+    RAW_EPOCH_AVG = 1
     WITHIN_SESSION_PROCESS = True
     if WITHIN_SESSION_PROCESS:
         MIN_TGAP, MAX_TGAP = 1, 1000
         WITHIN_SESSION_SEGMENT_SIZE, WITHIN_SESSION_PAIR_IDX = 6, 2
         #WITHIN_SESSION_SEGMENT_SIZE, WITHIN_SESSION_PAIR_IDX = 3, 1
+        EPOCHS_TO_READ = 18
     else:
-        WITHIN_SESSION_SEGMENT_SIZE = len(AVG_MANY_EPOCHS)
-    #
-    # if PROCESS_QUADS:
-    #     V_SAMP_PER_SEC = V_SAMP_PER_SEC * 4
-    #     CORR_WINDOW_SEC = CORR_WINDOW_SEC / 4
-    # #assert (AUTO_OR_CROSS_ACTIVATION == "CROSS") or (not AVG_MANY_EPOCHS)
-    # #
-    # SELECT_CONTACTS_BY_CORR = False
-    # V_SAMP_FOR_SLCT = 4
-    SAVE_CONTACT_LIST = False
-    USE_CONTACT_SELECTION_FROM_FILE = True
-    #CONTACT_SELECTION_FILE_NAME = 'C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_cntdwn_{}_{}'.format(MIN_TGAP, MAX_TGAP)
-    CONTACT_SELECTION_FILE_NAME = 'C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_cntdwn_3_5'
+        WITHIN_SESSION_SEGMENT_SIZE = 6#len(AVG_MANY_EPOCHS)
+
+    # SAVE_CONTACT_LIST = False
+    # USE_CONTACT_SELECTION_FROM_FILE = True
+    # #CONTACT_SELECTION_FILE_NAME = 'C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_cntdwn_{}_{}'.format(MIN_TGAP, MAX_TGAP)
+    # CONTACT_SELECTION_FILE_NAME = 'C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_cntdwn_3_5'
 
 
 
     data_availability_obj = data_availability()
-    epoch_subsets =  [EPOCH_SUBSET, OTHER_EPOCH_SUBSET] if not AVG_MANY_EPOCHS else AVG_MANY_EPOCHS
+    # epoch_subsets =  [EPOCH_SUBSET, OTHER_EPOCH_SUBSET] if not AVG_MANY_EPOCHS else AVG_MANY_EPOCHS
+    epoch_subsets = [[i*RAW_EPOCH_AVG, (i+1)*RAW_EPOCH_AVG-1] for i in range(int(EPOCHS_TO_READ / RAW_EPOCH_AVG))]
+    epoch_subsets = ['e{}-e{}'.format(i1, i2) for (i1, i2) in epoch_subsets]
     # contact_list = data_availability_obj.get_get_contacts_for_2_session_gap_epoch_splits(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
     #                                                                                      event_type=event_type, sub_event_type=event_type,
     #                                                                                      epoch_subsets=epoch_subsets, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
+    
+    
+    # prepare contact list
+    # stage 1: find suitable contacts
     
     list_1C, list_2C = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
                                                                                            proc_type='gamma_c_60_160', event_list=['CNTDWN'], 
@@ -266,65 +306,81 @@ if __name__ == '__main__':
     
     (list_1C, list_2C, list_1R, list_2R) = data_availability_obj.intersect_epoch_files_and_contact_lists([list_1C, list_2C, list_1R, list_2R])
     
-    if event_type == 'CNTDWN':
-        list_1, list_2 = list_1C, list_2C
-        RANDOM_SHIFT = False
-    if event_type == 'RECALL':
-        list_1, list_2 = list_1R, list_2R
-        RANDOM_SHIFT = True
+    # if event_type == 'CNTDWN':
+    #     list_1, list_2 = list_1C, list_2C
+    #     RANDOM_SHIFT = False
+    # if event_type == 'RECALL':
+    #     list_1, list_2 = list_1R, list_2R
+    #     RANDOM_SHIFT = True
 
     
     
-    contact_info = data_availability_obj.get_contact_info(list_1)
+    contact_info = data_availability_obj.get_contact_info(list_1C)
     
     boundary_sec = np.arange(start=-1, stop=11+1e-6, step=1/V_SAMP_PER_SEC)
 
     # read data
-    data_1, cntct_mask = read_epoch_files_by_list(list_1, first_epoch=0, last_epoch=18, boundary_sec=boundary_sec, random_shift=RANDOM_SHIFT)
+    data_1C, cntct_mask = read_epoch_files_by_list(list_1C, first_epoch=0, last_epoch=EPOCHS_TO_READ, boundary_sec=boundary_sec, random_shift=False)
+    data_1R, _ = read_epoch_files_by_list(list_1R, first_epoch=0, last_epoch=EPOCHS_TO_READ, boundary_sec=boundary_sec, random_shift=True, verbose=False)
     if WITHIN_SESSION_PROCESS:
         scnd_start_idx = WITHIN_SESSION_SEGMENT_SIZE * WITHIN_SESSION_PAIR_IDX
-        data_2 = data_1[scnd_start_idx:scnd_start_idx+WITHIN_SESSION_SEGMENT_SIZE]
-        data_1 = data_1[:WITHIN_SESSION_SEGMENT_SIZE]
+        data_2C = data_1C[scnd_start_idx:scnd_start_idx+WITHIN_SESSION_SEGMENT_SIZE]
+        data_1C = data_1C[:WITHIN_SESSION_SEGMENT_SIZE]
+        data_2R = data_1R[scnd_start_idx:scnd_start_idx+WITHIN_SESSION_SEGMENT_SIZE]
+        data_1R = data_1R[:WITHIN_SESSION_SEGMENT_SIZE]
     else:
-        data_2, cntct_mask_2 = read_epoch_files_by_list(list_2, first_epoch=0, last_epoch=18, boundary_sec=boundary_sec, random_shift=RANDOM_SHIFT)
+        data_2C, cntct_mask_2 = read_epoch_files_by_list(list_2C, first_epoch=0, last_epoch=18, boundary_sec=boundary_sec, random_shift=False)
+        data_2R, _ = read_epoch_files_by_list(list_2R, first_epoch=0, last_epoch=18, boundary_sec=boundary_sec, random_shift=True)
         cntct_mask = cntct_mask * cntct_mask_2
 
-    data_1 = data_1[:, cntct_mask, :]
-    data_2 = data_2[:, cntct_mask, :]
+    data_1C = data_1C[:, cntct_mask, :]
+    data_2C = data_2C[:, cntct_mask, :]
+    data_1R = data_1R[:, cntct_mask, :]
+    data_2R = data_2R[:, cntct_mask, :]
     contact_info = [contact_info[i] for i in np.argwhere(cntct_mask).flatten().astype(int)]
     
-    # now find "responsive" contacts
-    psth_by_cntct = (data_1.mean(axis=0) + data_2.mean(axis=0)) / 2
-    rr = np.median(psth_by_cntct[:, 1:], axis=-1) / psth_by_cntct[:, 0]
-    resp_mask = rr > 1
-    non_resp_mask = np.logical_not(resp_mask)
-    use_mask = resp_mask
-    data_1 = data_1[:, use_mask]
-    data_2 = data_2[:, use_mask]
-    contact_info = [contact_info[i] for i in np.argwhere(use_mask).flatten().astype(int)]
+    
+    
+    for USE in ['ALL', 'NON_RESP', 'RESP']:
+        for SPLIT in ['ALL', 'ODD', 'EVEN']:
+            
+            # if (USE != 'NON_RESP') or (SPLIT != 'ODD'):
+            #     continue
+            
 
-    output_folder = 'default'
-    psth_by_cntct = (data_1.mean(axis=0) + data_2.mean(axis=0)) / 2
-    psth_all = psth_by_cntct.mean(axis=0)
-    psth_all_sem = psth_by_cntct.std(axis=0) / np.sqrt(psth_by_cntct.shape[0])
-    fig, ax = plt.subplots(1, 1)
-    ax.bar((boundary_sec[:-1] + boundary_sec[1:]) / 2, psth_all)
-    ax.bar((boundary_sec[:-1] + boundary_sec[1:]) / 2, 2 * psth_all_sem, bottom=psth_all - psth_all_sem, width=0.1, color='k')
-    ax.set_title('PSTH')
-    ax.set_ylim((0.5, 1.5))
-    #fig.savefig(os.path.join(os.path.expanduser('~'), 'figs', 'PSTH.pdf'))
-    mysavefig(name='PSTH', subfolder=output_folder, fig=fig)
-    
-    
+            data_1C_, data_2C_, data_1R_, data_2R_, contact_info_ = get_contact_subset(data_1C, data_2C, data_1R, data_2R, contact_info, USE=USE, SPLIT=SPLIT)
+            #print(data_1C_.shape, data_2C_.shape, data_1R_.shape, data_2R_.shape, len(contact_info_))
 
-    fig = show_region_distribution(contact_info, title='{} contacts , delta=T = {} hrs to {} hrs'.format(len(contact_info), MIN_TGAP, MAX_TGAP))
-    #fig.savefig(os.path.join(os.path.expanduser('~'), 'figs', 'region_distribution.pdf'))
-    mysavefig(name='region_distribution', subfolder=output_folder, fig=fig)
-    
-    
-    do_rdm_analisys(data_1, data_2, epoch_count=6, output_folder=output_folder)
-    
-    
+            for event in ['CNTDWN', 'RECALL']:
+                if event == 'CNTDWN':
+                    data_1_, data_2_ = data_1C_, data_2C_
+                if event == 'RECALL':
+                    data_1_, data_2_ = data_1R_, data_2R_
+                output_folder = '{}_USE_{}_SPLIT_{}'.format(event, USE, SPLIT)
+                print('\n\n\nworking on', output_folder)
+                # output_folder = 'default'
+                psth_by_cntct = (data_1_.mean(axis=0) + data_2_.mean(axis=0)) / 2
+                psth_all = psth_by_cntct.mean(axis=0)
+                psth_all_sem = psth_by_cntct.std(axis=0) / np.sqrt(psth_by_cntct.shape[0])
+                fig, ax = plt.subplots(1, 1)
+                ax.bar((boundary_sec[:-1] + boundary_sec[1:]) / 2, psth_all)
+                ax.bar((boundary_sec[:-1] + boundary_sec[1:]) / 2, 2 * psth_all_sem, bottom=psth_all - psth_all_sem, width=0.1, color='k')
+                ax.set_title('PSTH')
+                ax.set_ylim((0.5, 1.5))
+                #fig.savefig(os.path.join(os.path.expanduser('~'), 'figs', 'PSTH.pdf'))
+                mysavefig(name='PSTH', subfolder=output_folder, fig=fig)
+                
+                
+
+                fig = show_region_distribution(contact_info_, title='{} contacts , delta=T = {} hrs to {} hrs'.format(len(contact_info), MIN_TGAP, MAX_TGAP))
+                #fig.savefig(os.path.join(os.path.expanduser('~'), 'figs', 'region_distribution.pdf'))
+                mysavefig(name='region_distribution', subfolder=output_folder, fig=fig)
+                
+                
+                do_rdm_analisys(data_1_, data_2_, epoch_count=6, output_folder=output_folder)
+                plt.close()
+        
+        
 
 
 
