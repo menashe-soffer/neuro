@@ -11,7 +11,6 @@ import copy
 import sklearn
 
 from data_availability_new import data_availability, contact_list_services
-from epoched_analysis_wrapper import calculate_p_values # SHOULD BE MOVED ELSEWHERE
 from channel_selection import *
 
 import logging
@@ -31,6 +30,24 @@ def mysavefig(subfolder=None, name=None, fig=None):
     
     fig.savefig(fname)
     plt.close(fig)
+
+
+def mysavedata(subfolder=None, name=None, data=None):
+
+    folder = os.path.join(os.path.expanduser('~'), 'figs')
+    if subfolder is not None:
+        folder = os.path.join(folder, subfolder)
+    os.makedirs(folder, exist_ok=True)
+    fname = os.path.join(folder, 'data_for_figures_11')
+    if os.path.isfile(fname):
+        with open(fname, 'rb') as fd:
+            d = pickle.load(fd)
+    else:
+        d = dict()
+    
+    d[name] = data
+    with open(fname, 'wb') as fd:
+        pickle.dump(d, fd)
 
 
 # def consistant_random_grouping(data, num_groups=2, pindex=2, axis=0, padding=False):
@@ -197,6 +214,7 @@ def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True,
         sns.heatmap(np.round(havg, decimals=2), vmin=vmin, vmax=vmax, ax=ax_folded, annot=True, square=True, cbar=False, xticklabels=xticks, yticklabels=yticks)
         #fig_pc.savefig(os.path.join(os.path.expanduser('~'), 'figs', title + '_pc.pdf'))
         mysavefig(fig=fig_pc, subfolder=output_folder, name=title + '_pc')
+        mysavedata(subfolder=output_folder, name=title + '_pc', data=dict({'havg': havg, 'xticks': xticks, 'yticks': yticks}))
         #fig_folded.savefig(os.path.join(os.path.expanduser('~'), 'figs', title + '_folded.pdf'))
         
         try:
@@ -222,6 +240,44 @@ def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True,
 
 
 
+def resample_epoch(data, fs, tscale, boundary_sec):
+        
+    resampled = np.zeros((data.shape[0], data.shape[1], boundary_sec.shape[-1] - 1))
+    if boundary_sec.ndim == 1:
+        for i, (start, stop) in enumerate(zip(boundary_sec[:-1], boundary_sec[1:])):
+            mask = (tscale >= start) * (tscale < stop)
+            resampled[:, :, i] = data[:, :, mask].mean(axis=-1)
+            #resampled[:, :, i] = np.linalg.norm(data[:, :, mask], axis=-1) / np.sqrt(mask.sum())
+    
+    if boundary_sec.ndim == 2:
+        for i_bin in range(boundary_sec.shape[-1] - 1):
+            for i_epoch in range(data.shape[0]):
+                start, stop = boundary_sec[i_epoch, i_bin], boundary_sec[i_epoch, i_bin + 1]
+                mask = (tscale >= start) * (tscale < stop)
+                resampled[i_epoch, :, i_bin] = data[i_epoch][:, mask].mean(axis=-1)
+                #resampled[i_epoch, :, i_bin] = np.linalg.norm(data[i_epoch][:, mask], axis=-1) / np.sqrt(mask.sum())
+    
+        # E, C, T = data.shape
+        # B = boundary_sec.shape[1] - 1 # Number of bins
+        # group_idx = np.empty((E, T), dtype=np.int32)
+        # for i_epoch in range(E):
+        #     group_idx[i_epoch, :] = np.searchsorted(boundary_sec[i_epoch, :], tscale, side='right') - 1
+        # valid_mask = (group_idx >= 0) & (group_idx < B)
+        # epoch_offsets = np.arange(E) * B
+        # global_group_id = (group_idx + epoch_offsets[:, np.newaxis]).ravel()
+        # D = T // B
+        # flattened_data = data.transpose(0, 2, 1).reshape(-1, C)
+        # valid_mask = (group_idx >= 0) & (group_idx < B) # Re-define mask for clarity
+        # valid_ids = global_group_id[valid_mask.ravel()]
+        # valid_data = flattened_data[valid_mask.ravel()]
+        # summed_data_flat = np.array([np.bincount(valid_ids, weights=valid_data[:, c], minlength=E * B)for c in range(C)]).T
+        # resampled_mean_flat = summed_data_flat / D
+        # resampled_temp = resampled_mean_flat.reshape(E, B, C)
+        # resampled_final = resampled_temp.transpose(0, 2, 1)
+        # resampled = resampled_final
+
+
+    return resampled
 
 
 
@@ -231,16 +287,9 @@ def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1,
     
     # the returned array has dimensions (epoch, contact, time)
     
-    def resample_epoch(data, fs, tscale, boundary_sec):
-        
-        resampled = np.zeros((data.shape[0], data.shape[1], boundary_sec.size - 1))
-        for i, (start, stop) in enumerate(zip(boundary_sec[:-1], boundary_sec[1:])):
-            mask = (tscale >= start) * (tscale < stop)
-            resampled[:, :, i] = data[:, :, mask].mean(axis=-1)
-        
-        return resampled
-    
-        
+    if random_shift:
+        np.random.seed(1)
+
     for i_subject in range(epoch_file_list.shape[0]):
         subject_data = epoch_file_list.iloc[i_subject]
         fname = subject_data['filename']
@@ -255,19 +304,23 @@ def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1,
         #
         if random_shift:
             tol = tscale[-1] - boundary_sec[-1]
-            tshift = np.random.uniform(low=0, high=tol)
+            tshift = np.random.uniform(low=0, high=tol, size=subject_signals.shape[0])
+            resampled = resample_epoch(subject_signals, fs, tscale, boundary_sec[np.newaxis, :] + tshift[:, np.newaxis])
+            #nmask = (tscale - tshift >= norm_baseline[0]) * (tscale - tshift <= norm_baseline[-1])
         else:
             tshift = 0
-        resampled = resample_epoch(subject_signals, fs, tscale, boundary_sec + tshift)
+            resampled = resample_epoch(subject_signals, fs, tscale, boundary_sec + tshift)
+        #resampled = resample_epoch(subject_signals, fs, tscale, boundary_sec + tshift)
+            
         #
         if i_subject == 0:
             data = np.copy(resampled)
-            #nmask = (tscale >= norm_baseline[0]) * (tscale <= norm_baseline[-1])
-            #norms = subject_signals[:, :, nmask].std(axis=-1)
-            norms = np.linalg.norm(subject_signals[:, :, nmask], axis=-1) / np.sqrt(nmask.sum())
+            #norms = np.linalg.norm(subject_signals[:, :, nmask], axis=-1) / np.sqrt(nmask.sum())
+            norms = np.mean(subject_signals[:, :, nmask], axis=-1)
         else:
             data = np.concatenate((data, np.copy(resampled)), axis=1)
-            norms = np.concatenate((norms, np.linalg.norm(subject_signals[:, :, nmask], axis=-1) / np.sqrt(nmask.sum())), axis=1)
+            #norms = np.concatenate((norms, np.linalg.norm(subject_signals[:, :, nmask], axis=-1) / np.sqrt(nmask.sum())), axis=1)
+            norms = np.concatenate((norms, np.mean(subject_signals[:, :, nmask], axis=-1)), axis=1)
         
     # normalize
     nominal_nf = 1 / np.median(norms)
@@ -288,6 +341,11 @@ def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1,
         print('use {:5.1f} percent of contacts'.format(100 * good_contact.mean()))
        
 
+    # ###
+    # ###
+    # good_contact = good_contact * np.prod(1 / norms < max_nf, axis=0).astype(bool)
+    # ###
+    # ###
     return data, good_contact
 
 

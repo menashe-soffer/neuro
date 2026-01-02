@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 import os
 import mne
 
-from epoched_analysis_wrapper import calculate_p_values # SHOULD BE MOVED ELSEWHERE
 import paths_and_constants
 
 

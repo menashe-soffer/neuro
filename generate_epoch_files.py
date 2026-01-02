@@ -12,14 +12,14 @@ from paths_and_constants import *
 #from path_utils import get_paths, get_subject_list
 import path_utils
 from my_mne_wrapper import my_mne_wrapper
-from data_availability import data_availability
+from data_availability_new import data_availability
 
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--proc_type', type=str, default='gamma_c_60_160', help='type of response')
-    parser.add_argument('--event_type', type=str, default='CNTDWN', help='event type to epoch')
+    parser.add_argument('--event_type', type=str, default='CNTRL', help='event type to epoch')
     parser.add_argument('--partition-id', type=int, default=0, help='The ID of the partition to process (0-indexed).')
     parser.add_argument('--num-partitions', type=int, default=1, help='The total number of partitions.')
 
@@ -33,7 +33,7 @@ if __name__ == '__main__':
     data_availability_obj = data_availability()
     index_obj = []
 
-    if args.event_type == 'CNTDWN':
+    if (args.event_type == 'CNTDWN') or (args.event_type == 'CNTRL'):
         sub_description = 'DIGIT'
         tmin, tmax = -5, 15.5
     if args.event_type == 'ORIENT':
@@ -66,9 +66,23 @@ if __name__ == '__main__':
                 
                 # make the event list
                 events_for_epoching , src_event_id= mne.events_from_annotations(mne_raw, verbose=False)
-                src_event_id = src_event_id[args.event_type]
-                events_for_epoching = events_for_epoching[events_for_epoching[:, 2] == src_event_id]
-                events_for_epoching[:, 2] = EVENT_TYPES[args.event_type]
+                if args.event_type == 'CNTRL':
+                    src_event_id = src_event_id['CNTDWN']
+                    events_for_epoching = events_for_epoching[events_for_epoching[:, 2] == src_event_id]
+                    events_for_epoching[:, 0] += int(mne_raw.info['sfreq'] * 20)
+                    events_for_epoching[:, 2] = EVENT_TYPES['CNTRL']
+                else:
+                    src_event_id = src_event_id[args.event_type]
+                    events_for_epoching = events_for_epoching[events_for_epoching[:, 2] == src_event_id]
+                    events_for_epoching[:, 2] = EVENT_TYPES[args.event_type]
+                ###
+                ###
+                if 'diffs' in locals():
+                    diffs = np.concatenate((diffs, np.diff(events_for_epoching[:, 0] / mne_raw.info['sfreq'])))
+                else:
+                    diffs = np.diff(events_for_epoching[:, 0] / mne_raw.info['sfreq'])
+                ###
+                ###
 
                 epoched = mne.Epochs(mne_raw, events=events_for_epoching, tmin=tmin, tmax=tmax, reject_by_annotation=True, verbose=False, baseline=None)
                 # epoched.plot()
@@ -87,3 +101,13 @@ if __name__ == '__main__':
                 
     dataframe = pd.DataFrame(index_obj)
     dataframe.to_csv(os.path.join(IDXS_FOLDER, 'epochs_{}_{}.csv'.format(args.event_type, args.proc_type)))
+    ###
+    ###
+    bins = np.arange(start=0, stop=200, step=2)
+    h, bins = np.histogram(diffs, bins=bins)
+    fig, ax = plt.subplots(1, 1)
+    ax.grid(True)
+    ax.bar((bins[:-1] + bins[1:]) / 2, h)
+    fig.savefig('/home/labs/malach/sofferme/figs/intervals_histogram.pdf')
+    ###
+    ###

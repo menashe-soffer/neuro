@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 
+
 class event_reader:
 
     def __init__(self, fname):
@@ -459,17 +460,18 @@ class event_reader:
 
 if __name__ == '__main__':
 
-    base_folder = 'E:/ds004789-download'
+    #from paths_and_constants import *
+    from path_utils import get_paths
+    
+    #base_folder = BASE_FOLDER
     subject_list = ['sub-R1060M', 'sub-R1065J', 'sub-R1092J', 'sub-R1094T', 'sub-R1123C', 'sub-R1145J', 'sub-R1153T',
                     'sub-R1154D', 'sub-R1161E', 'sub-R1168T', 'sub-R1195E', 'sub-R1223E', 'sub-R1243T', 'sub-R1281E', 'sub-R1292E',
                     'sub-R1299T', 'sub-R1315T', 'sub-R1334T', 'sub-R1338T', 'sub-R1341T', 'sub-R1350D', 'sub-R1355T', 'sub-R1425D']
 
-    from path_utils import get_paths
-
     images, leftovers, inters = [], [], []
     for subject in subject_list:
         print(subject)
-        paths = get_paths(base_folder=base_folder, subject=subject)
+        paths = get_paths(subject=subject)
         if len(paths) == 0:
             continue
         for path in paths:

@@ -15,16 +15,17 @@ from path_utils import get_subject_list, get_paths
 from event_reader import event_reader
 from my_montage_reader import my_montage_reader
 from my_mne_wrapper import my_mne_wrapper
+from paths_and_constants import *
 
 
-def make_data_availability_list(base_folder, region_list, hemisphere_sel):
+def make_data_availability_list(region_list, hemisphere_sel):
 
-    subject_list = get_subject_list(base_folder=base_folder)
+    subject_list = get_subject_list()
     data = dict()
 
     for i_subject, subject in enumerate(subject_list):
 
-        paths = get_paths(base_folder=base_folder, subject=subject, sess_slct=None, mode='bipolar')
+        paths = get_paths(subject=subject, sess_slct=None, mode='bipolar')
         # PATCH
         if len(paths) == 0:
             continue
@@ -171,10 +172,10 @@ def make_availity_list_by_rules(data, region_list, min_sessions=3, countdown_ran
 
 class data_availability:
 
-    base_folder = 'E:/ds004789-download'
-    processed_folder = 'E:/dr-processed'
+    base_folder = IDXS_FOLDER
+    processed_folder = PROC_FOLDER
 
-    def __init__(self, base_folder='E:/ds004789-download', fixed_data_filename='fixed_availability_data'):
+    def __init__(self, base_folder=IDXS_FOLDER, fixed_data_filename='fixed_availability_data'):
 
         with open(os.path.join(base_folder, fixed_data_filename), 'rb') as fd:
             self.data = pickle.load(fd)
@@ -419,7 +420,7 @@ if __name__ == '__main__':
     # _, suitable_contacts = data_availability_obj.get_contacts_for_2_session_gap(min_timegap_hrs=72, max_timegap_hrs=96)
     # print(len(suitable_contacts))
 
-    READ_FILES = False
+    READ_FILES = True
 
     base_folder = 'E:/ds004789-download'
 
@@ -435,8 +436,8 @@ if __name__ == '__main__':
     all_regions_hemisphere_sel = ['LR' for region in all_regions]
     # create table of available data
     if READ_FILES:
-        subjects_list = get_subject_list(base_folder=base_folder)
-        raw_availability_data = make_data_availability_list(base_folder=base_folder, region_list=all_regions, hemisphere_sel=all_regions_hemisphere_sel)
+        subjects_list = get_subject_list()
+        raw_availability_data = make_data_availability_list(region_list=all_regions, hemisphere_sel=all_regions_hemisphere_sel)
         with open(os.path.join(base_folder, 'raw_availability_data'), 'wb') as fd:
             pickle.dump(raw_availability_data, fd)
         #assert False
@@ -457,77 +458,3 @@ if __name__ == '__main__':
     print(admit_list.keys())
 
 
-    # # temporary statistics
-    # gap_after_countdown, countdown_to_word = [], []
-    # next_list, second_next_list = [], []
-    # for subject in list(admit_list.keys()):
-    #
-    #     subject_data = admit_list[subject]
-    #     admit_sessions = list(subject_data['sessions'].keys())
-    #     paths = get_paths(base_folder=base_folder, subject=subject, mode='bipolar', sess_slct=[int(a[-1]) for a in admit_sessions])
-    #     for path in paths:
-    #         event_filename = path['events']
-    #         session_name = event_filename[event_filename.find('ses-'):][:5]
-    #
-    #         event_reader_obj = event_reader(path['events'])
-    #         event_types = event_reader_obj.df.trial_type.values
-    #         times = event_reader_obj.df.onset.values
-    #         #
-    #         idxs = np.argwhere(event_types == 'COUNTDOWN_END').squeeze()
-    #         gap_after_countdown = gap_after_countdown + list(times[idxs+1] - times[idxs])
-    #         for idx in idxs:
-    #             #print(idx)
-    #             next_word_idx = idx + 1 + np.argwhere(event_types[idx + 1:] == 'WORD').squeeze()
-    #             next_practice_word_idx = idx + 1 + np.argwhere(event_types[idx + 1:] == 'PRACTICE_WORD').squeeze()
-    #             next_word_idx = (np.concatenate((next_word_idx, next_practice_word_idx))).min()
-    #             countdown_to_word.append(times[next_word_idx] - times[idx])
-    #             next_list.append(event_types[idx + 1] + ', ' + event_types[idx+2])
-    #             #second_next_list.append(event_types[idx + 2])
-    #         print(subject, session_name, len(gap_after_countdown), len(countdown_to_word))
-    #
-    # next_pair_types = np.unique(next_list)
-    # for next_event_pair in next_pair_types:
-    #     print(next_event_pair, '   ({})'.format(np.sum([next_event_pair == e for e in next_list])))
-    #
-    # fig, ax = plt.subplots(1, 2, figsize=(8, 4))
-    # h, bins = np.histogram(countdown_to_word, bins=100)
-    # bins = (bins[:-1] + bins[1:]) / 2
-    # ax[0].bar(bins, h, width=0.1)
-    # h, bins = np.histogram(gap_after_countdown, bins=100)
-    # bins = (bins[:-1] + bins[1:]) / 2
-    # ax[1].bar(bins, h, width=0.1)
-    # plt.show()
-
-
-    # # word repeat statistics
-    # word_per_subject_list = dict()
-    # for subject in list(admit_list.keys()):
-    #     subject_data = admit_list[subject]
-    #     admit_sessions = list(subject_data['sessions'].keys())
-    #     paths = get_paths(base_folder=base_folder, subject=subject, mode='bipolar',
-    #                       sess_slct=[int(a[-1]) for a in admit_sessions])
-    #     words_list = []
-    #     for path in paths:
-    #         print(path['events'])
-    #         event_reader_obj = event_reader(path['events'])
-    #         event_types = event_reader_obj.df.trial_type.values
-    #         event_names = event_reader_obj.df.item_name
-    #         words = event_names[event_types == 'WORD'].values
-    #         words_list.append(words)
-    #     subject_words = set(words_list[0]).intersection(set(words_list[1])).intersection(set(words_list[2]))
-    #     word_per_subject_list[subject] = copy.deepcopy(subject_words)
-    #
-    # n_subjects = len(admit_list)
-    # admit_subjects = list(admit_list)
-    # hit_mat = np.zeros((n_subjects, n_subjects))
-    # for i_sub1 in range(n_subjects - 1):
-    #     list1 = word_per_subject_list[admit_subjects[i_sub1]]
-    #     if i_sub1 == 0:
-    #         common_list = copy.deepcopy(list1)
-    #     else:
-    #         if i_sub1 != 3:
-    #             common_list = common_list.intersection(list1)
-    #     for i_sub2 in range(i_sub1, n_subjects):
-    #         list2 = word_per_subject_list[admit_subjects[i_sub2]]
-    #         hit_mat[i_sub1, i_sub2] = len(list1.intersection(list2))
-    # print('here')
