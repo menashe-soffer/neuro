@@ -104,7 +104,7 @@ def read_edf_and_mark_bad_chans_and_segs(path):
     ch_names = mne_wrapper.get_mne().ch_names
     fs = mne_wrapper.get_mne().info['sfreq']
 
-    MANUAL_PROCESSING = False
+    MANUAL_PROCESSING = True
     if MANUAL_PROCESSING:
         # past 1: simple statistics
         total_chans, exclude_chans = 0, 0
@@ -466,10 +466,10 @@ if __name__ == '__main__':
     
     #subject_list = ['sub-R1161E']
     gc_obj = monitor_and_run_gc()
-    FORCE_OVERRIDE = True
+    FORCE_OVERRIDE = False
     #from tqdm import tqdm
     fail_list = []
-    events_to_process = ['cntdwn', 'orient', 'dstrct', 'recall', 'list', 'rest']
+    events_to_process = ['orient', 'dstrct', 'recall', 'cntdwn', 'list', 'rest']
     IS_CLUSTER = False
     import glob
     subject_list = [os.path.basename((s)) for s in glob.glob(os.path.join(BASE_FOLDER, 'sub-R*'))]

@@ -1,5 +1,8 @@
+import os.path
+import pickle
 
 from rdm_tools import *
+from paths_and_constants import *
 def split_session_to_fake_sessions(contact_list, segment_size=3, pair_idx=1):
 
     for i_contact, contact in enumerate(contact_list):
@@ -19,9 +22,10 @@ if __name__ == '__main__':
     AUTO_OR_CROSS_ACTIVATION = "CROSS"  # "AUTO": generate session rdm from single epoch set (diagonal = 1); "CROSS": cross-correlate two epoch sets
     EPOCH_SUBSET = 'e0-e5'#
     OTHER_EPOCH_SUBSET = 'e6-e11' if AUTO_OR_CROSS_ACTIVATION == "CROSS" else EPOCH_SUBSET# None#for making self-session rdms
-    #AVG_MANY_EPOCHS = ['e0-e0', 'e1-e1', 'e2-e2', 'e3-e3', 'e4-e4', 'e5-e5', 'e6-e6', 'e7-e7', 'e8-e8', 'e9-e9', 'e10-e10', 'e11-e11', 'e12-e12', 'e13-e13', 'e14-e14', 'e15-e15', 'e16-e16', 'e17-e17']
-    AVG_MANY_EPOCHS = ['e0-e2', 'e3-e5', 'e6-e8', 'e9-e11', 'e12-e14', 'e15-e17']
-    MIN_TGAP, MAX_TGAP = 24, 48#108, 180#60, 108#36, 60#72, 96#60, 160#10, 500#180, 276#
+    AVG_MANY_EPOCHS = ['e0-e0', 'e1-e1', 'e2-e2', 'e3-e3', 'e4-e4', 'e5-e5', 'e6-e6', 'e7-e7', 'e8-e8', 'e9-e9', 'e10-e10', 'e11-e11']#, 'e12-e12', 'e13-e13', 'e14-e14', 'e15-e15', 'e16-e16', 'e17-e17']
+    #AVG_MANY_EPOCHS = ['e0-e1', 'e2-e3', 'e4-e5', 'e6-e7']#, 'e8-e9', 'e10-e11', 'e12-e13', 'e14-e15']
+    #AVG_MANY_EPOCHS = ['e0-e2', 'e3-e5', 'e6-e8', 'e9-e11', 'e12-e14', 'e15-e17']
+    MIN_TGAP, MAX_TGAP = 24, 1240#24, 48#108, 180#60, 108#36, 60#72, 96#60, 160#10, 500#180, 276#
     SELECT_CONTACTS_BY_PERIODICITY = 0 # 0: ignore periodicity, 1: select periodic contacts, -1: select NON-periodic contacts
     CONTACT_SPLIT = None # None: use all, 0: even contacts only, 1: odd contacts only
     PROCESS_QUADS = False
@@ -31,8 +35,9 @@ if __name__ == '__main__':
     WITHIN_SESSION_PROCESS = True
     if WITHIN_SESSION_PROCESS:
         MIN_TGAP, MAX_TGAP = 1, 1000
-        #WITHIN_SESSION_SEGMENT_SIZE, WITHIN_SESSION_PAIR_IDX = 6, 2
-        WITHIN_SESSION_SEGMENT_SIZE, WITHIN_SESSION_PAIR_IDX = 3, 1
+        #WITHIN_SESSION_SEGMENT_SIZE, WITHIN_SESSION_PAIR_IDX = 6+2, 1
+        WITHIN_SESSION_SEGMENT_SIZE, WITHIN_SESSION_PAIR_IDX = 4, 1
+        #WITHIN_SESSION_SEGMENT_SIZE, WITHIN_SESSION_PAIR_IDX = 3, 1
     else:
         WITHIN_SESSION_SEGMENT_SIZE = len(AVG_MANY_EPOCHS)
     #
@@ -43,30 +48,36 @@ if __name__ == '__main__':
     #
     SELECT_CONTACTS_BY_CORR = False
     V_SAMP_FOR_SLCT = 4
-    SAVE_CONTACT_LIST = False
-    USE_CONTACT_SELECTION_FROM_FILE = True
-    #CONTACT_SELECTION_FILE_NAME = 'C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_cntdwn_{}_{}'.format(MIN_TGAP, MAX_TGAP)
-    CONTACT_SELECTION_FILE_NAME = 'C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_cntdwn_1_3'
+    SAVE_CONTACT_LIST = True
+    USE_CONTACT_SELECTION_FROM_FILE = False
+    INTERSECT_CONTACT_LIST_WITH_FILE = False
+    CONTACT_SELECTION_FILE_NAME = os.path.join(TEMP_FOLDER, 'contact_list_{}_{}_{}_i'.format(event_type, MIN_TGAP, MAX_TGAP))
+    CONTACT_INTERSECT_FILE_NAME = os.path.join(TEMP_FOLDER, 'contact_list_intersect_inter_intra')
+    #CONTACT_INTERSECT_FILE_NAME = os.path.join(TEMP_FOLDER, 'contact_list_intersect')#-24_60-72_240')
 
 
 
     data_availability_obj = data_availability()
     epoch_subsets =  [EPOCH_SUBSET, OTHER_EPOCH_SUBSET] if not AVG_MANY_EPOCHS else AVG_MANY_EPOCHS
-    contact_list = data_availability_obj.get_get_contacts_for_2_session_gap_epoch_splits(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
-                                                                                         event_type=event_type, sub_event_type=event_type,
-                                                                                         epoch_subsets=epoch_subsets, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
+    BYPASS_CONTACT_LIST = True
+    if not BYPASS_CONTACT_LIST:
+        contact_list = data_availability_obj.get_get_contacts_for_2_session_gap_epoch_splits(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
+                                                                                             event_type=event_type, sub_event_type=event_type,
+                                                                                             epoch_subsets=epoch_subsets, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
+        with open(os.path.join(TEMP_FOLDER, 'contact_list_for_debug'), 'wb') as fd:
+            pickle.dump(dict({'contact_list': contact_list}), fd)
+    else:
+        print('\n *** WARNING! USING SAVED CONTACT LIST ***\n')
+        with open(os.path.join(TEMP_FOLDER, 'contact_list_for_debug'), 'rb') as fd:
+            contact_list = pickle.load(fd)['contact_list']
+
 
     # #
-    # temp_list = ['sub-R1065J', 'sub-R1083J', 'sub-R1111M', 'sub-R1112M', 'sub-R1118N', 'sub-R1161E', 'sub-R1168T', 'sub-R1172E', 'sub-R1196N',
-    #              'sub-R1283T', 'sub-R1308T', 'sub-R1315T', 'sub-R1325C', 'sub-R1336T', 'sub-R1338T', 'sub-R1355T', 'sub-R1542J']
-    # revised = []
-    # for c in contact_list:
-    #     if c['subject'] in temp_list:
-    #         revised.append(c)
-    # print(len(contact_list), len(revised))
-    # #assert False
-    # contact_list = revised2d
+    # with open(os.path.join(TEMP_FOLDER, 'temp_clist_{}_{}_{}'.format(event_type, MIN_TGAP, MAX_TGAP)), 'wb') as fd:
+    #     pickle.dump(contact_list, fd)
+    # assert False
     # #
+
     if WITHIN_SESSION_PROCESS:
         contact_list = split_session_to_fake_sessions(contact_list, segment_size=WITHIN_SESSION_SEGMENT_SIZE, pair_idx=WITHIN_SESSION_PAIR_IDX)
 
@@ -127,9 +138,25 @@ if __name__ == '__main__':
                     combined_list.append(c)
         contact_list = combined_list[:len(contact_list_ref)]#[:100]
 
-    services = contact_list_services()
-    contact_list = services.remove_double_contacts(contact_list)
+    if INTERSECT_CONTACT_LIST_WITH_FILE:
+        with open(CONTACT_INTERSECT_FILE_NAME, 'rb') as fd:
+            contact_list_ref = pickle.load(fd)
+        combined_list = []
+        for cid, c in enumerate(contact_list):
+            if c['subject'] in list(contact_list_ref.keys()):
+                if c['name'] in contact_list_ref[c['subject']]:
+                    combined_list.append(c)
+        contact_list = combined_list
 
+
+    services = contact_list_services()
+    if not BYPASS_CONTACT_LIST:
+        contact_list = services.remove_double_contacts(contact_list)
+
+    # #
+    # from psth_tools import calc_psth_basic
+    # calc_psth_basic(contact_list, subject_ids, ACTIVE_CONTACTS_ONLY=ACTIVE_CONTACTS_ONLY)
+    # #
 
     pair_cnt = 0
     contact_list_ = np.copy(contact_list)
@@ -140,11 +167,11 @@ if __name__ == '__main__':
         for i_sbst1 in range(i_sbst0 + 1, epoch_count) if AUTO_OR_CROSS_ACTIVATION=='CROSS' else [i_sbst0] :
 
             rdm_size_, rdm0_, rdm1_, csac_, R0_, R1_, contact_list__ = do_analysis_for_two_epoch_sets(contact_list_, subject_ids, i_sbst0, i_sbst1,
-                                               V_SAMP_PER_SEC, SHOW_TIME_PER_CONTACT, False, CORR_WINDOW_SEC,
+                                               V_SAMP_PER_SEC, SHOW_TIME_PER_CONTACT, ACTIVE_CONTACTS_ONLY, CORR_WINDOW_SEC,
                                                AUTO_OR_CROSS_ACTIVATION, CONTACT_SPLIT, PROCESS_QUADS, tfm=projector, SHOW=(i_sbst0 + i_sbst1 == 111), ccorr_mode=CROSS_SESSION_CMODE)
             contact_list_ = services.intersect_lists(contact_list_, contact_list__)
             if pair_cnt == 0:
-                rdm_size, rdm0, rdm1, csac, R0, R1 = rdm_size_, rdm0_, rdm1_, csac_, R0_, R1_
+                rdm_size, rdm0, rdm1, csac, R0, R1 = np.copy(rdm_size_), np.copy(rdm0_), np.copy(rdm1_), np.copy(csac_), np.copy(R0_), np.copy(R1_)
             else:
                 rdm0 += rdm0_
                 rdm1 += rdm1_
@@ -164,7 +191,6 @@ if __name__ == '__main__':
     csac /= pair_cnt
     R0 /= pair_cnt
     R1 /= pair_cnt
-
 
 
 if SAVE_CONTACT_LIST:
@@ -199,13 +225,13 @@ if DISPLAY_PLAIN_AVERAGING:
     visualize_rdms(np.expand_dims(rep_pcors, axis=0), title='full vector relative representation correlation', show_hists=False, show_bars=False, show=False)
     show_corr_diagonals(csac, rep_pcors, show=True)
 
-    with open(os.path.join(os.path.dirname(CONTACT_SELECTION_FILE_NAME), 'cs_corrs_1'), 'wb') as fd:
+    with open(os.path.join(TEMP_FOLDER, '{}_{}_{}_i'.format(event_type, WITHIN_SESSION_SEGMENT_SIZE, WITHIN_SESSION_PAIR_IDX)), 'wb') as fd:
         pickle.dump(dict({'csac': csac, 'rep_pcorr': rep_pcors}), fd)
 
 
     #
     # redu everything with lists
-DISPLAY_5_3_2 = len(AVG_MANY_EPOCHS) >= 6
+DISPLAY_5_3_2 = len(AVG_MANY_EPOCHS) >= 4
 if DISPLAY_5_3_2:
     csac_list, R0_list, R1_list = np.array(csac_list), np.array(R0_list), np.array(R1_list)
     # # re-disply activation correlations with error bars
@@ -216,12 +242,21 @@ if DISPLAY_5_3_2:
     # # no generate rep_pcoers for seperate reps
     # partial averagings
     if AUTO_OR_CROSS_ACTIVATION == 'CROSS':
+        if pair_cnt == 66:
+            sbgrps = np.array((1, 10, 15, 2, 8, 14, 3, 9, 11, 4, 7, 12, 5, 6, 13)).reshape(5, 3)
+            sub_cnt = 5
         if pair_cnt == 15:
             sbgrps = np.array((1, 10, 15, 2, 8, 14, 3, 9, 11, 4, 7, 12, 5, 6, 13)).reshape(5, 3)
             sub_cnt = 5
         if pair_cnt == 3:
             sbgrps = np.array((1, 2, 3)).reshape(1, 3)
             sub_cnt = 1
+        if pair_cnt == 6: # for the 4,1 option (reading 2 epocj avgs.) - relative codes with each epoch appear only once
+            sbgrps = np.array((1, 6)).reshape(2, 1)
+            sub_cnt = 2
+        if pair_cnt == 28: # for the 8,1 option - activation corrs with each epoch appear only once
+            sbgrps = np.array((1, 14, 23, 28)).reshape(4, 1)
+            sub_cnt = 4
     if AUTO_OR_CROSS_ACTIVATION == 'AUTO':
         sbgrps = np.array((1, 2, 3, 4, 5, 6)).reshape(3, 2)
         sub_cnt = 3
@@ -240,6 +275,8 @@ if DISPLAY_5_3_2:
                 v1, v2 = R0_list[i_pair, digit_1], R1_list[i_pair, digit_2]
                 #rep_pcors_list[i_pair, digit_1, digit_2] = pierson (v1, v2, remove_nans=True) #(v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
                 rep_pcors_list[i_pair, digit_1, digit_2] = pierson(v1, v2, remove_nans=True, mode=CROSS_SESSION_CMODE)  # (v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
+    rdm0 = rdm0_list[-1]#np.array([rdm0_list[0], rdm0_list[-1]]).mean(axis=0)
+    rdm1 = rdm1_list[-1]#np.array([rdm1_list[0], rdm1_list[-1]]).mean(axis=0)
     visualize_rdms(np.expand_dims(rdm0, axis=0),
                    title='RDM 1st SESSION', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3])
     visualize_rdms(np.expand_dims(rdm1, axis=0),
@@ -254,29 +291,18 @@ if DISPLAY_5_3_2:
     show_corr_diagonals(csac_list, rep_pcors_list, show=True)
 
 
-    with open(os.path.join(os.path.dirname(CONTACT_SELECTION_FILE_NAME), 'cs_corrs_5_3'), 'wb') as fd:
-        pickle.dump(dict({'csac': csac_list, 'rep_pcorr': rep_pcors_list}), fd)
+    # if WITHIN_SESSION_PROCESS:
+    #     fname = os.path.join(TEMP_FOLDER, '{}_{}_{}_{}'.format(event_type, len(AVG_MANY_EPOCHS), WITHIN_SESSION_SEGMENT_SIZE, WITHIN_SESSION_PAIR_IDX))
+    # else:
+    #     fname = os.path.join(TEMP_FOLDER, '{}_{}_{}_{}_{}'.format(event_type, len(AVG_MANY_EPOCHS), WITHIN_SESSION_SEGMENT_SIZE, MIN_TGAP, MAX_TGAP))
+    # with open(fname, 'wb') as fd:
+    #     pickle.dump(dict({'csac': csac_list, 'rep_pcorr': rep_pcors_list}), fd)
 
 
     #
     rep_pcors = rep_pcors_list.mean(axis=0)
 
 
-
-    # # show the diagonals
-    # fig, ax = plt.subplots(1, 1, figsize=(10, 5))
-    # c_act_avg, c_act_std = np.mean(csac_list, axis=0), np.std(csac_list, axis=0)
-    # #c_rep_avg, c_rep_std = np.mean(rep_pcors_list, axis=0), np.std(rep_pcors_list, axis=0)
-    # c_rep_avg, c_rep_std = rep_pcors, np.zeros(rep_pcors.shape)
-    # ax.bar(np.arange(c_act_avg.shape[0]) - 0.2, np.diag(c_act_avg), width=0.2, label='activations')
-    # ax.bar(np.arange(c_act_avg.shape[0]) - 0.2, 2 * np.diag(c_act_std), bottom=np.diag(c_act_avg) - np.diag(c_act_std), width=0.05, color='k')
-    # ax.bar(np.arange(c_rep_avg.shape[0]) + 0.2, np.diag(c_rep_avg), width=0.2, label='relational codes')
-    # ax.bar(np.arange(c_rep_avg.shape[0]) + 0.2, 2 * np.diag(c_rep_std), bottom=np.diag(c_rep_avg) - np.diag(c_rep_std), width=0.05, color='k')
-    # ax.grid(True)
-    # ax.set_ylim([-1.1, 1.1])
-    # ax.legend()
-    # plt.show()
-    # #
 
 
 
@@ -294,44 +320,7 @@ if DISPLAY_5_3_2:
     print('relative :\t\t\t {:4.2f} (dev {:4.2f}) \t{:4.2f} (dev {:4.2f}) '.format(on_diag.mean(), on_diag.std(), off_diag.mean(), off_diag.std()))
 
 
-    # # show the diagonals
-    # fig, ax = plt.subplots(1, 1, figsize=(10, 5))
-    # ax.bar(np.arange(csac.shape[0]) - 0.2, np.diag(csac), width=0.2, label='activations')
-    # ax.bar(np.arange(rep_pcors.shape[0]) + 0.2, np.diag(rep_pcors), width=0.2, label='relational codes')
-    # ax.grid(True)
-    # ax.set_ylim([-1.1, 1.1])
-    # ax.legend()
-    # if not PROCESS_QUADS:
-    #     ax.set_xticks(np.arange(12), ['pre\ncnt', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'post\ncnt'])
-    # fig.suptitle('correlations')
-    # plt.show()
-    # #
-    # fname = 'C:/Users/menas/OneDrive/Desktop/openneuro/tmpres-sbst'# + str(EPOCH_SUBSET)
-    # with open(fname, 'wb') as fd:
-    #     pickle.dump({'csac': csac, 'rep_pcors': rep_pcors}, fd)
-    # #
 
-
-    # EXAMPLE ON GENERATING SPLITS
-    # # print('collecting statistics')
-    # # for split_id in tqdm.tqdm(range(1, NUM_SPLITS)):
-    # #     split_data = consistant_random_grouping(data_mat, pindex=split_id, axis=1)
-    # #     split_data = np.array(split_data) # axes: {contact group, session, contact (within group), time)
-    # #     # correlation between corresponding seconds is different sessions
-    # #     rdms = generate_rdm(split_data, rdm_size, pre_ignore, delta_time_smple, ses=[0, 1])
-    # #     rdm_results[split_id * 2] = rdms[0]
-    # #     rdm_results[split_id * 2 + 1] = rdms[1]
-    # #     #
-    # #     SHOW_EACH_RDM = False
-    # #     if SHOW_EACH_RDM:
-    # #         fig, ax = plt.subplots(1, 2, figsize=(10, 6), num='split rdm')
-    # #         sns.heatmap(np.round(rdms[0], decimals=2), vmin=-1, vmax=1, ax=ax[0], annot=True, square=True, cbar=False)
-    # #         ax[0].set_title('random contact sel {} / {}'.format(split_id, 1))
-    # #         sns.heatmap(np.round(rdms[1], decimals=2), vmin=-1, vmax=1, ax=ax[1], annot=True, square=True, cbar=False)
-    # #         ax[1].set_title('random contact sel {} / {}'.format(split_id, 2))
-    # #         plt.show(block=False)
-    # #         plt.pause(0.1)
-    # # visualize_rdms(rdm_results)
 
 
 

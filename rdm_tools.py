@@ -13,6 +13,7 @@ import sklearn
 from data_availability import data_availability, contact_list_services
 from epoched_analysis_wrapper import calculate_p_values # SHOULD BE MOVED ELSEWHERE
 from channel_selection import *
+from paths_and_constants import *
 
 import logging
 # logging.basicConfig(filename='C:/Users/menas/OneDrive/Desktop/openneuro/temp/generate_rdms_wrapper.log', filemode='w', level=logging.DEBUG)
@@ -235,6 +236,59 @@ def read_data_single_two_sessions_single_epoch(contact_list, subject_ids, v_samp
             active_contact_list.append({'subject': contact['subject'], 'name': contact['name']})
             active_contact_mask[i_cntct] = True
             dst_idx += 1
+            if (os.path.basename(running_first).find('R1001P_ses-0') > -1) and (src_idx1 < 5):
+                if src_idx1 == 0:
+                    fig1, ax1 = plt.subplots(1, 1)
+                    #fig_rs, ax_rs = plt.subplots(5, 8)
+                epname = os.path.basename(running_first)[os.path.basename(running_first).find('bipolar_e'):][8:13]
+                ax1.set_title(epname)
+                ax1.grid(True)
+                t = first_data.times
+                mask = (t > 0) * (t < 5)
+                ax1.plot(t[mask], first_data._data[src_idx1][mask], label=first_data.ch_names[src_idx1])
+                ax1.legend()
+                fig1.savefig(os.path.join(TEMP_FOLDER, epname + '.pdf'))
+                print(epname, first_data.ch_names[src_idx1], np.round(data_mat[0, id_in_mat], decimals=3))
+                i_epoch = int(epname[1])
+                # ax_rs[src_idx1, i_epoch].bar(np.arange(data_mat.shape[-1]), data_mat[0, id_in_mat])
+                # ax_rs[src_idx2, i_epoch].set_ylim((0.5, 1.5))
+                # fig_rs.savefig(os.path.join(TEMP_FOLDER, 'resampled_old_{}.pdf'.format(epname)))
+                rs_fname = os.path.join(TEMP_FOLDER, 'resampled_old')
+                if os.path.isfile(rs_fname):
+                    with open(rs_fname, 'rb') as fd:
+                        rs_dict = pickle.load(fd)
+                else:
+                    rs_dict = dict()
+                rs_dict['{}-{}'.format(src_idx1, i_epoch)] = data_mat[0, id_in_mat]
+                with open(rs_fname, 'wb') as fd:
+                    pickle.dump(rs_dict, fd)
+            if (os.path.basename(running_second).find('R1001P_ses-0') > -1) and (src_idx2 < 5):
+                if src_idx2 == 0:
+                    fig2, ax2 = plt.subplots(1, 1)
+                    ax2.grid(True)
+                epname = os.path.basename(running_second)[os.path.basename(running_second).find('bipolar_e'):][8:13]
+                ax2.set_title(epname)
+                t = first_data.times
+                mask = (t > 0) * (t < 5)
+                ax2.plot(t[mask], second_data.get_data()[src_idx2][mask], label=first_data.ch_names[src_idx2])
+                ax2.legend()
+                fig2.savefig(os.path.join(TEMP_FOLDER, epname + '.pdf'))
+                print(epname, first_data.ch_names[src_idx2], np.round(data_mat[1, id_in_mat], decimals=3))
+                i_epoch = int(epname[1])
+                # ax_rs[src_idx2, i_epoch].bar(np.arange(data_mat.shape[-1]), data_mat[0, id_in_mat])
+                # ax_rs[src_idx2, i_epoch].set_ylim((0.5, 1.5))
+                # fig_rs.savefig(os.path.join(TEMP_FOLDER, 'resampled_old_{}.pdf'.format(epname)))
+                rs_fname = os.path.join(TEMP_FOLDER, 'resampled_old')
+                if os.path.isfile(rs_fname):
+                    with open(rs_fname, 'rb') as fd:
+                        rs_dict = pickle.load(fd)
+                else:
+                    rs_dict = dict()
+                rs_dict['{}-{}'.format(src_idx2, i_epoch)] = data_mat[1, id_in_mat]
+                with open(rs_fname, 'wb') as fd:
+                    pickle.dump(rs_dict, fd)
+                assert src_idx1 == src_idx2
+
 
     if cmprs:
         data_mat = data_mat[:, :dst_idx]
@@ -420,6 +474,12 @@ def do_analysis_for_two_epoch_sets(contact_list, subject_ids, esel0, esel1,
 
     rdm0 = calc_rdm(data_mat[0], rdm_size, pre_ignore, delta_time_smple)
     rdm1 = calc_rdm(data_mat[1], rdm_size, pre_ignore, delta_time_smple)
+    #
+    fname = os.path.join(TEMP_FOLDER, 'inp_to_rdm_old')
+    if not os.path.isfile(fname):
+        with open(fname, 'wb') as fd:
+            pickle.dump(dict({0: data_mat[0][:, :6], 1: data_mat[1][:, :6], 2: rdm0, 3: rdm1}), fd)
+    #
     if SHOW:
         visualize_rdms(np.expand_dims(rdm0, axis=0), title=' early session', show_hists=False, show=False)
         visualize_rdms(np.expand_dims(rdm1, axis=0), title=' subsequent session', show_hists=False, show=False)
@@ -440,8 +500,8 @@ def do_analysis_for_two_epoch_sets(contact_list, subject_ids, esel0, esel1,
         R0 = relative_codes(rdm0, first=0, last=4, remove_diag=True, normalize=False)
         R1 = relative_codes(rdm1, first=0, last=4, remove_diag=True, normalize=False)
     else:
-        R0 = relative_codes(rdm0, first=1, remove_diag=True, normalize=False)
-        R1 = relative_codes(rdm1, first=1, remove_diag=True, normalize=False)
+        R0 = relative_codes(rdm0, first=0, remove_diag=True, normalize=False)
+        R1 = relative_codes(rdm1, first=0, remove_diag=True, normalize=False)
 
 
     return rdm_size, rdm0, rdm1, csac, R0, R1, contact_list
@@ -489,6 +549,7 @@ def show_relational_codes(R0_list, R1_list, show=False):
     # upper = max(R0_list[np.logical_not(np.isnan(R0_list))].max(), R1_list[np.logical_not(np.isnan(R1_list))].max())
     lower = min((R0_avg - R0_sem)[np.logical_not(np.isnan(R0_avg))].min(), (R1_avg - R1_sem)[np.logical_not(np.isnan(R1_avg))].min())
     upper = max((R0_avg + R1_sem)[np.logical_not(np.isnan(R0_avg))].max(), (R1_avg + R1_sem)[np.logical_not(np.isnan(R1_avg))].max())
+    #lower, upper = max(lower, -1), min(upper, 1)
     ystep = 0.1
     lower, upper = np.floor(lower / ystep) * ystep, np.ceil(upper / ystep) * ystep
     for i in range(num_codes):
