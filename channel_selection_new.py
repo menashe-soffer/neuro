@@ -76,11 +76,8 @@ class ieegTripletDataset(torch.utils.data.Dataset):
         return anchor, positive, negative
 
 
-    
-    
-    
-if __name__ == '__main__':
-    
+def train_a_net():    
+
     V_SAMP_PER_SEC = 10
     V_SAMP_PER_SEC_RDM = 1
     # AUTO_OR_CROSS_ACTIVATION = "CROSS"  # "AUTO": generate session rdm from single epoch set (diagonal = 1); "CROSS": cross-correlate two epoch sets
@@ -174,19 +171,17 @@ if __name__ == '__main__':
         print('epoch {}  loss {:6.4f}'.format(i_epoch, epoch_loss))
         loss_trace[i_epoch] = epoch_loss
         
-        wgt_fname = os.path.join(HOME_DIR, 'figs', 'weights.pth')
+        wgt_fname = os.path.join(IDXS_FOLDER, 'weights.pth')
         torch.save(model.state_dict(), wgt_fname)
         
         weights = model.fc1.weight.data.numpy()
         abs_weights = np.abs(weights)
         importance = np.sum(abs_weights, axis=0)
-        fname = os.path.join(HOME_DIR, 'figs', 'contact importance')
+        fname = os.path.join(IDXS_FOLDER, 'contact importance')
         with open(fname, 'wb') as fd:
             pickle.dump(dict({'contact_info': contact_info, 'importance': importance}), fd)
         
         
-        if i_epoch >= 95:
-            print('here')
         if i_epoch == 100:
             optimizer = torch.optim.SGD(model.parameters(), lr=1e-2, momentum=0.9, weight_decay=1e-4)
             scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.995)
@@ -199,3 +194,67 @@ if __name__ == '__main__':
             ax.plot(np.arange(25, i_epoch-24), np.convolve(loss_trace, np.ones(25) / 25, mode='same')[25:i_epoch-24], linewidth=3)
             ax.grid(True)
             mysavefig(name='train_loss', fig=fig)
+    
+
+
+def same_contact(cntct1, cntct2):
+    
+    ok = cntct1['subject'] == cntct2['subject']
+    ok = ok & (cntct1['name'] == cntct2['name'])
+    return ok
+
+
+
+def select_channels_using_importance_file(contact_info, fname=None, q=0.8):
+    
+    if fname is None:
+        fname = os.path.join(IDXS_FOLDER, 'contact importance')
+    with open(fname, 'rb') as fd:
+        d = pickle.load(fd)
+        importance_contact_info = d['contact_info']
+        importance = d['importance']
+    thd = np.quantile(importance, q=q)
+    
+    print('selecting contacts using data in', fname)
+    mask = np.zeros(len(contact_info), dtype=bool)
+    # for i_cntct, cntct in tqdm.tqdm(enumerate(contact_info)):
+    for i_cntct in tqdm.tqdm(range(len(contact_info))):
+        cntct = contact_info[i_cntct]
+        # locate the contact in the importance file
+        idx_in_list, value = -1, -1
+        for idx, cntct_in_list in enumerate(importance_contact_info):
+            if same_contact(cntct, cntct_in_list):
+                idx_in_list = idx
+                value = importance[idx_in_list]
+        mask[i_cntct] = value > thd
+    
+    #print(mask.sum())
+    return mask
+
+    
+
+def select_channels_by_regions(contact_info, region_list=[], soft=False):
+        
+    mask = np.zeros(len(contact_info), dtype=bool)
+    for i_cntct, cntct in enumerate(contact_info):
+        ok1 = cntct['location'][0]['region'] in region_list
+        ok2 = cntct['location'][1]['region'] in region_list
+        mask[i_cntct] = (ok1 or ok2) if soft else (ok1 and ok2)
+    
+    return mask
+
+
+
+
+
+if __name__ == '__main__':
+    
+    #train_a_net()
+    fname = os.path.join(IDXS_FOLDER, 'contact importance')
+    
+    with open(fname, 'rb') as fd:
+        d = pickle.load(fd)
+        contact_info = d['contact_info']
+    select_channels_using_importance_file(contact_info=contact_info, fname=fname)
+    select_channels_by_regions(contact_info=contact_info, region_list=['fusiform-L', 'fusiform-L'])
+    
