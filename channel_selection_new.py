@@ -8,6 +8,7 @@ import sys
 
 from rdm_tools_new import *
 from paths_and_constants import *
+from data_availability_new import data_availability, contact_list_services
 
 
 # import torch
@@ -197,39 +198,48 @@ def train_a_net():
     
 
 
-def same_contact(cntct1, cntct2):
-    
-    ok = cntct1['subject'] == cntct2['subject']
-    ok = ok & (cntct1['name'] == cntct2['name'])
-    return ok
 
 
 
-def select_channels_using_importance_file(contact_info, fname=None, q=0.8):
+def get_sublist_by_importance(fname=None, q=0.8):
     
     if fname is None:
         fname = os.path.join(IDXS_FOLDER, 'contact importance')
     with open(fname, 'rb') as fd:
         d = pickle.load(fd)
-        importance_contact_info = d['contact_info']
+        contact_info = d['contact_info']
         importance = d['importance']
-    thd = np.quantile(importance, q=q)
+    mask = importance > np.quantile(importance, q=q)
     
-    print('selecting contacts using data in', fname)
-    mask = np.zeros(len(contact_info), dtype=bool)
-    # for i_cntct, cntct in tqdm.tqdm(enumerate(contact_info)):
-    for i_cntct in tqdm.tqdm(range(len(contact_info))):
-        cntct = contact_info[i_cntct]
-        # locate the contact in the importance file
-        idx_in_list, value = -1, -1
-        for idx, cntct_in_list in enumerate(importance_contact_info):
-            if same_contact(cntct, cntct_in_list):
-                idx_in_list = idx
-                value = importance[idx_in_list]
-        mask[i_cntct] = value > thd
+    return mask, [contact_info[i] for i in np.argwhere(mask).flatten()]
+
+
+# def select_channels_using_importance_file(contact_info, fname=None, q=0.8):
     
-    #print(mask.sum())
-    return mask
+#     if fname is None:
+#         fname = os.path.join(IDXS_FOLDER, 'contact importance')
+#     with open(fname, 'rb') as fd:
+#         d = pickle.load(fd)
+#         importance_contact_info = d['contact_info']
+#         importance = d['importance']
+#     thd = np.quantile(importance, q=q)
+    
+#     contact_list_services_obj = contact_list_services()
+#     print('selecting contacts using data in', fname)
+#     mask = np.zeros(len(contact_info), dtype=bool)
+#     # for i_cntct, cntct in tqdm.tqdm(enumerate(contact_info)):
+#     for i_cntct in tqdm.tqdm(range(len(contact_info))):
+#         cntct = contact_info[i_cntct]
+#         # locate the contact in the importance file
+#         idx_in_list, value = -1, -1
+#         for idx, cntct_in_list in enumerate(importance_contact_info):
+#             if contact_list_services_obj.is_same_contact(cntct, cntct_in_list):
+#                 idx_in_list = idx
+#                 value = importance[idx_in_list]
+#         mask[i_cntct] = value > thd
+    
+#     #print(mask.sum())
+#     return mask
 
     
 
@@ -241,7 +251,7 @@ def select_channels_by_regions(contact_info, region_list=[], soft=False):
         ok2 = cntct['location'][1]['region'] in region_list
         mask[i_cntct] = (ok1 or ok2) if soft else (ok1 and ok2)
     
-    return mask
+    return mask, [contact_info[i] for i in np.argwhere(mask).flatten()]
 
 
 
@@ -255,6 +265,14 @@ if __name__ == '__main__':
     with open(fname, 'rb') as fd:
         d = pickle.load(fd)
         contact_info = d['contact_info']
-    select_channels_using_importance_file(contact_info=contact_info, fname=fname)
-    select_channels_by_regions(contact_info=contact_info, region_list=['fusiform-L', 'fusiform-L'])
+    mask_1, contact_info_1 = get_sublist_by_importance(fname=fname)
+    mask_2, contact_info_2 = select_channels_by_regions(contact_info=contact_info, region_list=['fusiform-L', 'fusiform-L'])
+    print(mask_1.sum(), len(contact_info_1), mask_2.sum(), len(contact_info_2))
     
+    
+    data_availability_obj = data_availability()
+    list_1C, list_2C = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=1, max_timegap_hrs=1000,
+                                                                                       proc_type='gamma_c_60_160', event_list=['CNTDWN'], 
+                                                                                       num_epochs=18, enforce_first=True, single_session=True)
+    list_new, info_new = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_1C, contact_info=contact_info_1)
+    print('here')

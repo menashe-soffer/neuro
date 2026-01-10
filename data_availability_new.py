@@ -199,76 +199,6 @@ class data_availability:
 
 
 
-    # def get_contacts_for_2_session_gap(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None, epoch_subset=None, enforce_first=False, single_session=False):
-
-    #     # first make flattened session list
-    #     suitable_session_pairs = []
-    #     for subject in self.data:
-    #         subject_data = self.data[subject]
-    #         keys = list(subject_data['sessions'].keys())
-    #         if single_session:
-    #             # PATCH TO USE THE CODE FOR SINGLE SESSION
-    #             keys, min_timegap_hrs = [keys[0], keys[0]], -1
-    #         num_sessions = len(keys)
-    #         timegap_matrix_hrs = np.zeros((num_sessions, num_sessions))
-    #         session_dates =  [subject_data['sessions'][sess]['date'] for sess in keys]
-    #         for i1 in range(num_sessions-1):
-    #             for i2 in range(i1+1, num_sessions):
-    #                 try:
-    #                     timegap_matrix_hrs[i1, i2] = (session_dates[i2] - session_dates[i1]).total_seconds() / 3600
-    #                 except:
-    #                     print('fail', subject, keys[i1], keys[i2], session_dates[i2], session_dates[i1])
-    #         #
-    #         suitability_mat = (timegap_matrix_hrs > min_timegap_hrs) * (timegap_matrix_hrs < max_timegap_hrs)
-    #         for i1 in range(1 if enforce_first else num_sessions-1):
-    #             for i2 in range(i1+1, num_sessions):
-    #                 if suitability_mat[i1, i2]:
-    #                     pair = {'subject': subject, 'first': keys[i1], 'second': keys[i2],
-    #                             'delta_hrs': timegap_matrix_hrs[i1, i2], 'contacts': subject_data['bipolar_names'], 'contacts_details': subject_data['electrodes by name']}
-    #                     suitable_session_pairs.append(pair)
-    #                     suitability_mat[i1, :], suitability_mat[:, i1], suitability_mat[i2, :], suitability_mat[:, i2] = False, False, False, False
-
-    #     # intersect with available evoked files
-    #     if event_type is not None:
-
-    #         #pattern = os.path.join(self.processed_folder, 'sub-R*', 'ses-*', event_type, '*' + sub_event_type + '-ieeg-evoked-ave.fif')
-    #         if epoch_subset is None:
-    #             pattern = os.path.join(self.processed_folder, 'sub-R*', 'ses-*', event_type, '*bipolar_-' + sub_event_type + '-ieeg-evoked-ave.fif')
-    #         else:
-    #             pattern = os.path.join(self.processed_folder, 'sub-R*', 'ses-*', event_type, '*bipolar_{}--'.format(epoch_subset) + sub_event_type + '-ieeg-evoked-ave.fif')
-    #         evoked_list = glob.glob(pattern)
-    #         revised_pair_list = []
-    #         for pair in suitable_session_pairs:
-    #             subject, first, second = pair['subject'], pair['first'], pair['second']
-    #             # look for the files
-    #             evoked_1, evoked_2 = None, None
-    #             for fname in evoked_list:
-    #                 if (fname.find(subject) > -1):
-    #                     evoked_1 = fname if fname.find(first) > -1 else evoked_1
-    #                     evoked_2 = fname if fname.find(second) > -1 else evoked_2
-    #             if (evoked_1 is not None) and (evoked_2 is not None):
-    #                 pair['first'] = evoked_1
-    #                 pair['second'] = evoked_2
-    #                 revised_pair_list.append(pair)
-    #         #print([p['subject'] for p in revised_pair_list])
-    #         suitable_session_pairs = revised_pair_list
-
-
-    #     # flatten
-    #     suitable_contacts = []
-    #     for pair in suitable_session_pairs:
-    #         for contact in pair['contacts']:
-    #             contact_data = {'subject': pair['subject'], 'name': contact, 'first': pair['first'], 'second': pair['second'], 'delta_hrs': pair['delta_hrs']}
-    #             contact_data['location'] = self.__bipolar_contact_additional_data(contact, pair['contacts_details'])
-    #             suitable_contacts.append(contact_data)
-
-    #     return suitable_session_pairs, suitable_contacts
-
-
-
-
-
-
     def get_suitable_epoch_files_and_contacts(self, min_timegap_hrs, max_timegap_hrs, proc_type,
                                                             event_list=[], num_epochs=1, enforce_first=False, single_session=False):
         
@@ -350,6 +280,36 @@ class data_availability:
                 epoch_file_lists[i_list].at[epoch_file_lists[i_list].index[int(i)], 'contacts'] = list(contacts)
         
         return epoch_file_lists
+    
+    
+    
+    def intersect_contact_list_and_contact_info(self, contact_list, contact_info):
+        
+        # step 1: create new list with empty contact fields
+        contact_list_new = copy.deepcopy(contact_list)
+        for i in contact_list_new.index:
+            contact_list_new.at[i, 'contacts'] = []
+        
+        # going over contact_info
+        mask = np.zeros(len(contact_info), dtype=bool)
+        for i_info, cinfo in enumerate(contact_info):
+            i_list = np.argwhere(contact_list['subject'] == cinfo['subject'])
+            if i_list.size > 0:
+                i_list = int(i_list.squeeze())
+                if cinfo['name'] in contact_list.iloc[i_list]['contacts']:
+                    contact_list_new.iloc[i_list]['contacts'].append(cinfo['name'])
+                    mask[i_info] = True
+        
+        # the new contact info
+        contact_info_new = [contact_info[i] for i in np.argwhere(mask).flatten()]
+        # flush subjects with no contacts
+        for i in contact_list_new.index:
+            if len(contact_list_new.at[i, 'contacts']) == 0:
+                contact_list_new.drop(i, inplace=True)
+        
+        
+        return contact_list_new, contact_info_new
+        
 
 
 
@@ -367,40 +327,6 @@ class data_availability:
         return contact_list
 
 
-
-    # def get_get_contacts_for_2_session_gap_epoch_splits(self, min_timegap_hrs, max_timegap_hrs, event_type=None, sub_event_type=None, epoch_subsets=None, enforce_first=False, single_session=False):
-
-    #     _, contact_list = self.get_contacts_for_2_session_gap(min_timegap_hrs=min_timegap_hrs, max_timegap_hrs=max_timegap_hrs,
-    #                                                           event_type=event_type, sub_event_type=sub_event_type, 
-    #                                                           epoch_subset=epoch_subsets[0], single_session=single_session)
-
-    #     for contact in contact_list:
-    #         contact['first'], contact['second'] = [contact['first']], [contact['second']]
-
-    #     for i_sbst, second_epoch_subset in enumerate(epoch_subsets[1:]):
-
-    #         _, contact_list2 = self.get_contacts_for_2_session_gap(min_timegap_hrs=min_timegap_hrs, max_timegap_hrs=max_timegap_hrs,
-    #                                                                event_type=event_type, sub_event_type=sub_event_type, epoch_subset=second_epoch_subset,
-    #                                                                enforce_first=enforce_first, single_session=single_session)
-    #         # TBD find intersect of two lists
-    #         combined_list = []
-    #         rplc_pattrn_1, rplc_pattern2 = str(epoch_subsets[0]), str(second_epoch_subset)
-    #         for i_cntct, contact in tqdm.tqdm(enumerate(contact_list)):
-    #             # check if the same contact apears in the second list
-    #             exist2 = False
-    #             for i_cntct2, contact2 in enumerate(contact_list2):
-    #                 if contact['subject'] == contact2['subject']:
-    #                     if contact['name'] == contact2['name']:
-    #                         ok1 = contact['first'][0].replace(rplc_pattrn_1, rplc_pattern2) == contact2['first']
-    #                         ok2 = contact['second'][0].replace(rplc_pattrn_1, rplc_pattern2) == contact2['second']
-    #                         if ok1 and ok2:
-    #                             contact['first'].append(contact2['first'])
-    #                             contact['second'].append(contact2['second'])
-    #                             combined_list.append(contact)
-    #                             break
-    #         contact_list = combined_list
-
-    #     return contact_list
 
 
     def get_subject_list(self):
@@ -460,6 +386,9 @@ class data_availability:
     #     pattern = os.path.join(self.processed_folder, 'sub-R*', 'ses-*', major_event, '*' + sub_event + '-ieeg-evoked-ave.fif')
     #
     #     return glob.glob(pattern)
+
+
+
 
 
 class contact_list_services:
