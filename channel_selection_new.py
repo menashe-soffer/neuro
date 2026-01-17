@@ -259,7 +259,13 @@ def select_channels_by_regions(contact_info, region_list=[], soft=False):
 
 if __name__ == '__main__':
     
-    #train_a_net()
+    TRAIN = True
+    
+    if TRAIN:
+        train_a_net()
+        assert False
+    
+    
     fname = os.path.join(IDXS_FOLDER, 'contact importance')
     
     with open(fname, 'rb') as fd:

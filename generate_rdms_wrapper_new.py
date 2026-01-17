@@ -1,6 +1,8 @@
 
 from rdm_tools_new import *
 from permute_digits import digit_permutator
+from paths_and_constants import *
+from channel_selection_new import select_channels_by_regions, get_sublist_by_importance
 
 
 
@@ -50,16 +52,13 @@ def do_rdm_analisys(data_1, data_2, epoch_count, output_folder, v_samp_per_sec, 
             
             rdm0_ = calc_rdm(data=data_mat_pair[0], rdm_size=rdm_size, pre_ignore=pre_ignore, delta_time_smple=int(delta_time_sec * v_samp_per_sec))
             rdm1_ = calc_rdm(data=data_mat_pair[1], rdm_size=rdm_size, pre_ignore=pre_ignore, delta_time_smple=int(delta_time_sec * v_samp_per_sec))
-
-            SHOW = False
-            if SHOW:
-                visualize_rdms(np.expand_dims(rdm0_, axis=0), title=' early session', show_hists=False, show=False, output_folder=output_folder)
-                visualize_rdms(np.expand_dims(rdm1_, axis=0), title=' subsequent session', show_hists=False, show=False, output_folder=output_folder)
             
             csac_ = calc_rdm(data_mat_pair.mean(axis=1), rdm_size, pre_ignore, int(delta_time_sec * v_samp_per_sec), corr_mode='p')
             
-            R0_ = relative_codes(rdm0_, first=0, remove_diag=True, normalize=False)
-            R1_ = relative_codes(rdm1_, first=0, remove_diag=True, normalize=False)
+            # R0_ = relative_codes(rdm0_, first=0, remove_diag=True, normalize=False)
+            # R1_ = relative_codes(rdm1_, first=0, remove_diag=True, normalize=False)
+            R0_ = relative_codes((rdm0_ + rdm0_.T) / 2, first=0, remove_diag=True, normalize=False)
+            R1_ = relative_codes((rdm1_ + rdm1_.T) / 2, first=0, remove_diag=True, normalize=False)
            #
             
 
@@ -395,6 +394,21 @@ if __name__ == '__main__':
     #list_1C, list_2C, list_1R, list_2R = list_1C[:1], list_2C[:1], list_1R[:1], list_2R[:1]
     
     contact_info = data_availability_obj.get_contact_info(list_1C)
+    #
+    SELECT_BY_REGION = False
+    if SELECT_BY_REGION:
+        # _, contact_info = select_channels_by_regions(contact_info=contact_info, region_list=['fusiform-L', 'fusiform-R'])
+        _, contact_info = select_channels_by_regions(contact_info=contact_info, region_list=['middletemporal-L', 'middletemporal-R',
+                                                                                            'superiortemporal-L', 'superiortemporal-R',
+                                                                                            'rostralmiddlefrontal-L1', 'rostralmiddlefrontal-R1'])
+        contact_info_imp = contact_info
+    else:
+        _, contact_info_imp = get_sublist_by_importance(fname=os.path.join(IDXS_FOLDER, 'contact importance'), q=0.85)
+    list_1C, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_1C, contact_info=contact_info_imp)
+    list_2C, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_2C, contact_info=contact_info_imp)
+    list_1R, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_1R, contact_info=contact_info_imp)
+    list_2R, contact_info = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_2R, contact_info=contact_info_imp)
+    #
     
     boundary_sec = np.arange(start=-1, stop=11+1e-6, step=1/V_SAMP_PER_SEC)
 
@@ -425,7 +439,7 @@ if __name__ == '__main__':
     contact_info = [contact_info[i] for i in np.argwhere(cntct_mask).flatten().astype(int)]
     
     digit_permute_obj = digit_permutator()
-    #np.random.seed(2)
+    np.random.seed(2)
     pidxs = np.random.choice(digit_permute_obj.get_num_perms(), size=2, replace=False)
     print(pidxs)
         
@@ -522,22 +536,27 @@ if __name__ == '__main__':
                 # mysavefig(name='functional connectivity', subfolder=output_folder, fig=fig)
                 #
                 
-                # # remove average per epoch
-                # avg = data_1_[:, :, :].mean(axis=-1)
-                # data_1_ -= np.array([avg for i in range(data_1_.shape[2])]).transpose((1, 2, 0))
-                # avg = data_2_[:, :, :].mean(axis=-1)
-                # data_2_ -= np.array([avg for i in range(data_2_.shape[2])]).transpose((1, 2, 0))
+                REMOVE_AVG = False
+                PERMUTE_DIGITS = False
+
+                if REMOVE_AVG:
+                    # remove average per epoch
+                    avg = data_1_[:, :, :].mean(axis=-1)
+                    data_1_ -= np.array([avg for i in range(data_1_.shape[2])]).transpose((1, 2, 0))
+                    avg = data_2_[:, :, :].mean(axis=-1)
+                    data_2_ -= np.array([avg for i in range(data_2_.shape[2])]).transpose((1, 2, 0))
                 
                 # data_1_ = scramble_digits(data_1_, seed=-2, permute_epochs=True)
                 # data_2_ = scramble_digits(data_2_, seed=-2, add_permute=True)
                 
-                print(np.round(data_1_[:, 0, :], decimals=3))
-                data_1_ = digit_permute_obj(data_1_, permid=pidxs[0])
-                print(np.round(data_1_[:, 0, :], decimals=3))
-                print('\n\n')
-                print(np.round(data_2_[:, 0, :], decimals=3))
-                data_2_ = digit_permute_obj(data_2_, permid=pidxs[1])
-                print(np.round(data_2_[:, 0, :], decimals=3))
+                if PERMUTE_DIGITS:
+                    print(np.round(data_1_[:, 0, :], decimals=3))
+                    data_1_ = digit_permute_obj(data_1_, permid=pidxs[0])
+                    print(np.round(data_1_[:, 0, :], decimals=3))
+                    print('\n\n')
+                    print(np.round(data_2_[:, 0, :], decimals=3))
+                    data_2_ = digit_permute_obj(data_2_, permid=pidxs[1])
+                    print(np.round(data_2_[:, 0, :], decimals=3))
                 #
                 contact_info_ = contact_info_[:]
                 #
