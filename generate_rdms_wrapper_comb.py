@@ -677,8 +677,6 @@ if __name__ == '__main__':
                 # data_2C_ = digit_permute_obj(data_2C_, permid=pidxs[0])
                 #
                 from correlation_tools_comb import my_flow
-                data_1C_ = data_1C_.mean(axis=1)[:, np.newaxis, :]
-                data_2C_ = data_2C_.mean(axis=1)[:, np.newaxis, :]
                 my_flow(data_1C_[:16],  data_2C_[:16], boundary_sec=boundary_sec)
                 assert False
                 #
