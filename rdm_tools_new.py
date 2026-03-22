@@ -123,6 +123,13 @@ def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True,
 
     num_splits = rdms.shape[0]
     rdm_size = rdms.shape[-1]
+    
+    # calc diag/off-diag ratio
+    margin = int((rdm_size - 10) / 2)
+    inner_rdm = rdms[:, margin:-margin].mean(axis=0)
+    dsum = np.diag(inner_rdm).sum()
+    off_dsum = inner_rdm.sum() - dsum
+    diag_off_diag_ratio = (dsum / 10) / (off_dsum / (100 - 10))
 
     # generating the correlation bars
     if show_bars:
@@ -203,8 +210,10 @@ def visualize_rdms(rdms, title='', dst_idx=' ', show_bars=True, show_hists=True,
             vmin, vmax = -1, 1
         fig_pc, ax_pc = plt.subplots(1, 1, figsize=(6, 6))
         fig_folded, ax_folded = plt.subplots(1, 1, figsize=(6, 6))
-        fig_pc.suptitle('{}\n{} contacts, {} split permutations'.format(title, dst_idx, num_splits))
-        fig_folded.suptitle('{}\n{} contacts, {} split permutations'.format(title, dst_idx, num_splits))
+        # fig_pc.suptitle('{}\n{} contacts, {} split permutations'.format(title, dst_idx, num_splits))
+        # fig_folded.suptitle('{}\n{} contacts, {} split permutations'.format(title, dst_idx, num_splits))
+        fig_pc.suptitle('{}\ndiag/off diag ratio = {:5.2f}'.format(title, diag_off_diag_ratio))
+        fig_folded.suptitle('{}\ndiag/off diag ratio = {:5.2f}'.format(title, diag_off_diag_ratio))
         xticks, yticks = np.arange(-1, rdms.shape[1] - 1), np.arange(-1, rdms.shape[2] - 1)
         sns.heatmap(np.round(rdms.mean(axis=0), decimals=2), vmin=vmin, vmax=vmax, ax=ax_pc, annot=True, square=True, cbar=False, xticklabels=xticks, yticklabels=yticks)
         havg = rdms.mean(axis=0)

@@ -19,7 +19,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--proc_type', type=str, default='gamma_c_60_160', help='type of response')
-    parser.add_argument('--event_type', type=str, default='CNTRL', help='event type to epoch')
+    parser.add_argument('--event_type', type=str, default='CNTDWN', help='event type to epoch')
     parser.add_argument('--partition-id', type=int, default=0, help='The ID of the partition to process (0-indexed).')
     parser.add_argument('--num-partitions', type=int, default=1, help='The total number of partitions.')
 

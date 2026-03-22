@@ -1,8 +1,136 @@
 
 from rdm_tools_new import *
-from permute_digits import digit_permutator
+#from permute_digits import digit_permutator
 from paths_and_constants import *
 from channel_selection_new import select_channels_by_regions, get_sublist_by_importance
+import tqdm
+
+
+
+
+import numpy as np
+import pickle
+import os
+import time
+
+from itertools import combinations
+from paths_and_constants import *
+
+
+    
+
+class digit_permutator_8:
+    
+    def get_permute(self, cidx=0):
+
+        assert (cidx >= 0) and (cidx < 70)
+        
+        elements = range(8) # [0, 1, 2, 3, 4, 5, 6, 7]
+        combs= list(combinations(elements, 4))
+        comb = list(combs[cidx])
+        remain = list(set(comb) ^ set(elements))
+            
+        return comb + remain
+    
+
+
+    def __init__(self, num_epochs=8, num_digits=14, fs=1):
+        
+        assert num_epochs == 8
+        assert num_digits in [14, 28]#14
+        self.num_epochs = num_epochs
+        self.num_digits = num_digits
+        self.fs = fs
+
+    
+    def __call__(self, data, permid=0):
+        
+        assert data.shape[0] == self.num_epochs
+        assert data.shape[2] == self.num_digits * self.fs
+        
+        p = self.get_permute(cidx=permid)
+        new_data = np.zeros(data.shape)
+        for i_digit in range(self.num_digits):
+            if i_digit % 2 == 0:
+                new_data[:4, :, int(i_digit * self.fs):int((i_digit + 1) * self.fs)] = data[p[:4], :, int(i_digit * self.fs):int((i_digit + 1) * self.fs)]
+                new_data[4:, :, int(i_digit * self.fs):int((i_digit + 1) * self.fs)] = data[p[4:], :, int(i_digit * self.fs):int((i_digit + 1) * self.fs)]
+            else:
+                new_data[:4, :, int(i_digit * self.fs):int((i_digit + 1) * self.fs)] = data[p[4:], :, int(i_digit * self.fs):int((i_digit + 1) * self.fs)]
+                new_data[4:, :, int(i_digit * self.fs):int((i_digit + 1) * self.fs)] = data[p[:4], :, int(i_digit * self.fs):int((i_digit + 1) * self.fs)]
+        
+        return new_data
+    
+    
+    def get_num_perms(self):
+        
+        return 70
+    
+
+
+def generate_permutation_for_8():
+    
+    pobj = digit_permutator_8()
+    
+    fname = os.path.join('/home/labs/malach/sofferme', 'figs', 'params_for_digit_permite_8')
+    
+    OBSERVE_RESULTS = False
+    
+    if not OBSERVE_RESULTS:
+        try:
+            with open(fname, 'rb') as fd:
+                list4 = pickle.load(fd)['m_n_list']
+                nstart = np.array(list4)[:, 0].max() + 1
+        except:
+            list4 = []
+            nstart = 0
+        
+        h = np.zeros((100, 6))
+        good_mask = np.zeros((720, 100))
+        good_perms = []
+        for n in range(nstart, 40320):
+            for m in range(100):
+                p = pobj.get_permute(cidx=5)
+                score = np.min([np.sort(np.bincount(p[i], minlength=6))[3] for i in range(6)])
+                if score >= 3:
+                    good_perms.append(p)
+                    good_mask[n, m] = 1 + (score >= 4).astype(int)
+                    #print(n, m,  score)
+                    h[m, score] += 1
+                    if score == 4:
+                        list4.append([n, m])
+            if n % 20 == 19:
+                print('n =', n)
+                for m in range(100):
+                    if np.any(h[m] > 0):
+                        print(m, '\t', h[m])
+                print('combinations with score 3:', h[:, 3].sum())
+                print('combinations with score 4:', h[:, 4].sum())
+                with open(fname, 'wb') as fd:
+                    pickle.dump(dict({'m_n_list': list4}), fd)
+    
+    
+    if OBSERVE_RESULTS:
+        
+        with open(fname, 'rb') as fd:
+            list4 = pickle.load(fd)['m_n_list']
+            print('number of good combinations:', len(list4))
+        pick_n = 150
+        
+        for m_n in list4:
+            n, m = m_n
+            if n == pick_n:
+                print('n={}\tm={}'.format(n, m))
+                p = pobj.get_permute(n=n, m=m)
+                print(np.array(p))
+        print('pidx = ', 1000, '\n', np.array(pobj.get_permute(pidx=1000)))
+        print('pidx = ', 2000, '\n', np.array(pobj.get_permute(pidx=2000)))
+        print('there are {} different permutations'.format(pobj.get_num_perms()))
+        print('pidx = ', 1000, '\n', np.array(pobj.get_permute(pidx=3000))) # this one should produce a bug
+    
+
+
+
+
 
 
 
@@ -48,17 +176,23 @@ def do_rdm_analisys(data_1, data_2, epoch_count, output_folder, v_samp_per_sec, 
             
             pre_ignore = 0
             delta_time_sec = 1 / v_samp_per_sec
-            rdm_size = int((data_mat_pair.shape[-1] - pre_ignore) * delta_time_sec)
+            #
+            RDM_TIME_BIN = delta_time_sec
+            #
+            rdm_size = int((data_mat_pair.shape[-1] - pre_ignore) * (delta_time_sec / RDM_TIME_BIN))
             
             rdm0_ = calc_rdm(data=data_mat_pair[0], rdm_size=rdm_size, pre_ignore=pre_ignore, delta_time_smple=int(delta_time_sec * v_samp_per_sec))
             rdm1_ = calc_rdm(data=data_mat_pair[1], rdm_size=rdm_size, pre_ignore=pre_ignore, delta_time_smple=int(delta_time_sec * v_samp_per_sec))
+
+            SHOW = False
+            if SHOW:
+                visualize_rdms(np.expand_dims(rdm0_, axis=0), title=' early session', show_hists=False, show=False, output_folder=output_folder)
+                visualize_rdms(np.expand_dims(rdm1_, axis=0), title=' subsequent session', show_hists=False, show=False, output_folder=output_folder)
             
             csac_ = calc_rdm(data_mat_pair.mean(axis=1), rdm_size, pre_ignore, int(delta_time_sec * v_samp_per_sec), corr_mode='p')
             
-            # R0_ = relative_codes(rdm0_, first=0, remove_diag=True, normalize=False)
-            # R1_ = relative_codes(rdm1_, first=0, remove_diag=True, normalize=False)
-            R0_ = relative_codes((rdm0_ + rdm0_.T) / 2, first=0, remove_diag=True, normalize=False)
-            R1_ = relative_codes((rdm1_ + rdm1_.T) / 2, first=0, remove_diag=True, normalize=False)
+            R0_ = relative_codes(rdm0_, first=0, remove_diag=True, normalize=False)
+            R1_ = relative_codes(rdm1_, first=0, remove_diag=True, normalize=False)
            #
             
 
@@ -84,13 +218,13 @@ def do_rdm_analisys(data_1, data_2, epoch_count, output_folder, v_samp_per_sec, 
             rdm0_list.append(rdm0_)
             rdm1_list.append(rdm1_)
 
-    pair_cnt = 3
+    pair_cnt = 1#3
     rdm0 /= pair_cnt
     rdm1 /= pair_cnt
     csac /= pair_cnt
     R0 /= pair_cnt
     R1 /= pair_cnt
-    pair_cnt = 15
+    pair_cnt = 1#15
 
 
 
@@ -106,8 +240,8 @@ def do_rdm_analisys(data_1, data_2, epoch_count, output_folder, v_samp_per_sec, 
     # VISUALIZE RESULTS FOR PLAIN AVERAGING
     DISPLAY_PLAIN_AVERAGING = False#len(AVG_MANY_EPOCHS) == 0
     if DISPLAY_PLAIN_AVERAGING:
-        visualize_rdms(np.expand_dims(rdm0, axis=0), title=' early session ', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.1, 0.2])
-        visualize_rdms(np.expand_dims(rdm1, axis=0), title=' subsequent session', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.1, 0.2])
+        visualize_rdms(np.expand_dims(rdm0, axis=0), title=' early session ', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.1*3, 0.2*3])
+        visualize_rdms(np.expand_dims(rdm1, axis=0), title=' subsequent session', show_hists=False, show_bars=False, show=False, ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.1*3, 0.2*3])
         #for i_sbst in range(range(2 if AUTO_OR_CROSS_ACTIVATION=='CROSS' else 1):
         visualize_rdms(np.expand_dims(csac, axis=0),
                     #title='cross-session correlation of Activity vectors (sbst {})'.format(i_sbst + 1),
@@ -151,6 +285,9 @@ def do_rdm_analisys(data_1, data_2, epoch_count, output_folder, v_samp_per_sec, 
             if pair_cnt == 3:
                 sbgrps = np.array((1, 2, 3)).reshape(1, 3)
                 sub_cnt = 1
+            if pair_cnt == 1:
+                sbgrps = np.array((1, )).reshape(1, 1)
+                sub_cnt = 1
         if AUTO_OR_CROSS_ACTIVATION == 'AUTO':
             sbgrps = np.array((1, 2, 3, 4, 5, 6)).reshape(3, 2)
             sub_cnt = 3
@@ -162,26 +299,26 @@ def do_rdm_analisys(data_1, data_2, epoch_count, output_folder, v_samp_per_sec, 
             R1_list_[i_sub] = R1_list[sbgrps[i_sub] - 1].mean(axis=0)
         csac_list, R0_list, R1_list = Cact_list_, R0_list_, R1_list_
 
-        #
-        visualize_rdms(np.expand_dims(rdm0_list[0], axis=0),
-                    title='rdm 0 epochs 1, 2', show_hists=False, show_bars=False, show=False, 
-                    ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3], output_folder=output_folder)
-        visualize_rdms(np.expand_dims(rdm0_list[9], axis=0),
-                    title='rdm 0 epochs 3, 4', show_hists=False, show_bars=False, show=False, 
-                    ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3], output_folder=output_folder)
-        visualize_rdms(np.expand_dims(rdm0_list[14], axis=0),
-                    title='rdm 0 epochs 5, 6', show_hists=False, show_bars=False, show=False, 
-                    ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3], output_folder=output_folder)
-        visualize_rdms(np.expand_dims(rdm1_list[0], axis=0),
-                    title='rdm 1  epochs 7, 8', show_hists=False, show_bars=False, show=False, 
-                    ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3], output_folder=output_folder)
-        visualize_rdms(np.expand_dims(rdm1_list[9], axis=0),
-                    title='rdm 1  epochs 9, 10', show_hists=False, show_bars=False, show=False, 
-                    ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3], output_folder=output_folder)
-        visualize_rdms(np.expand_dims(rdm1_list[14], axis=0),
-                    title='rdm 1  epochs 11, 12', show_hists=False, show_bars=False, show=False, 
-                    ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3], output_folder=output_folder)
-        #
+        # #
+        # visualize_rdms(np.expand_dims(rdm0_list[0], axis=0),
+        #             title='rdm 0 epochs 1, 2', show_hists=False, show_bars=False, show=False, 
+        #             ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3], output_folder=output_folder)
+        # visualize_rdms(np.expand_dims(rdm0_list[9], axis=0),
+        #             title='rdm 0 epochs 3, 4', show_hists=False, show_bars=False, show=False, 
+        #             ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3], output_folder=output_folder)
+        # visualize_rdms(np.expand_dims(rdm0_list[14], axis=0),
+        #             title='rdm 0 epochs 5, 6', show_hists=False, show_bars=False, show=False, 
+        #             ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3], output_folder=output_folder)
+        # visualize_rdms(np.expand_dims(rdm1_list[0], axis=0),
+        #             title='rdm 1  epochs 7, 8', show_hists=False, show_bars=False, show=False, 
+        #             ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3], output_folder=output_folder)
+        # visualize_rdms(np.expand_dims(rdm1_list[9], axis=0),
+        #             title='rdm 1  epochs 9, 10', show_hists=False, show_bars=False, show=False, 
+        #             ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3], output_folder=output_folder)
+        # visualize_rdms(np.expand_dims(rdm1_list[14], axis=0),
+        #             title='rdm 1  epochs 11, 12', show_hists=False, show_bars=False, show=False, 
+        #             ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3], output_folder=output_folder)
+        # #
         rep_pcors_list = np.zeros((sub_cnt, rdm_size, rdm_size))
         for i_pair in range(sub_cnt):
             for digit_1 in range(rdm_size):
@@ -191,13 +328,13 @@ def do_rdm_analisys(data_1, data_2, epoch_count, output_folder, v_samp_per_sec, 
                     rep_pcors_list[i_pair, digit_1, digit_2] = pierson(v1, v2, remove_nans=True, mode=CROSS_SESSION_CMODE)  # (v1 * v2).sum() / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-18)
         visualize_rdms(np.expand_dims(rdm0, axis=0),
                     title='RDM 1st SESSION', show_hists=False, show_bars=False, show=False, 
-                    ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3], output_folder=output_folder)
+                    ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2*3, 0.3*3], output_folder=output_folder)
         visualize_rdms(np.expand_dims(rdm1, axis=0),
                     title='RDM 2nd SESSION', show_hists=False, show_bars=False, show=False, 
-                    ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3], output_folder=output_folder)
+                    ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2*3, 0.3*3], output_folder=output_folder)
         visualize_rdms(np.expand_dims(np.mean(csac_list, axis=0), axis=0),
                     title='ACTIVATION CROSS-SESSION AVG CORR', show_hists=False, show_bars=False, show=False, 
-                    ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2, 0.3], output_folder=output_folder)
+                    ovrd_bar_scale=[-0.1, 0.2], ovrd_heat_scale=[-0.2*2, 0.3*2], output_folder=output_folder)
         visualize_rdms(np.expand_dims(np.mean(rep_pcors_list, axis=0), axis=0),
                     title='RELATIVE REPRESANTATION AVG CORR', show_hists=False, show_bars=False, show=False, 
                     ovrd_bar_scale=[-0,1, 0.2], ovrd_heat_scale=[-1, 1], output_folder=output_folder)
@@ -206,11 +343,27 @@ def do_rdm_analisys(data_1, data_2, epoch_count, output_folder, v_samp_per_sec, 
         fig = show_relational_codes(R0_list, R1_list, show=False)
         #fig.savefig(os.path.join(os.path.expanduser('~'), 'figs', 'relational codes.pdf'))
         mysavefig(fig=fig, subfolder=output_folder, name='relational codes')
-        mysavedata(subfolder=output_folder, name='relational codes', data=dict({'R0_list': R0_list, 'R1_list': R1_list}))
+        saveok, savecnt = False, 5
+        while not saveok:
+            try:
+                mysavedata(subfolder=output_folder, name='relational codes', data=dict({'R0_list': R0_list, 'R1_list': R1_list}))
+                saveok = True
+            except:
+                time.sleep(1)
+                savecnt -= 1
+                assert savecnt > 0
         fig = show_corr_diagonals(csac_list, rep_pcors_list, show=True)
         #fig.savefig(os.path.join(os.path.expanduser('~'), 'figs', 'corr_diagonals.pdf'))
         mysavefig(fig=fig, subfolder=output_folder, name='corr diagonals')
-        mysavedata(subfolder=output_folder, name='diagonals', data=dict({'csac_list': csac_list, 'rep_pcors_list': rep_pcors_list}))
+        saveok, savecnt = False, 5
+        while not saveok:
+            try:
+                mysavedata(subfolder=output_folder, name='diagonals', data=dict({'csac_list': csac_list, 'rep_pcors_list': rep_pcors_list}))
+                saveok = True
+            except:
+                time.sleep(1)
+                savecnt -= 1
+                assert savecnt > 0
 
 
     # with open(os.path.join(os.path.dirname(CONTACT_SELECTION_FILE_NAME), 'cs_corrs_5_3'), 'wb') as fd:
@@ -234,6 +387,9 @@ def do_rdm_analisys(data_1, data_2, epoch_count, output_folder, v_samp_per_sec, 
     off_diag = tmprel[~np.eye(tmprel.shape[0],dtype=bool)]
     on_diag = np.diag(tmprel)
     print('relative :\t\t\t {:4.2f} (dev {:4.2f}) \t{:4.2f} (dev {:4.2f}) '.format(on_diag.mean(), on_diag.std(), off_diag.mean(), off_diag.std()))
+    
+    
+    return rdm0, rdm1, np.mean(rep_pcors_list, axis=0)
 
 
 
@@ -261,7 +417,8 @@ def get_contact_subset(data_1C, data_2C, data_1R, data_2R, contact_info, boundar
         thd = np.quantile(rr, 2/3)
         use_mask = rr > thd
     if USE == 'HIGH_RESP':
-        thd = np.quantile(rr, 0.95)
+        thd = np.quantile(rr, 0.975)
+        thd = np.sort(rr)[::-1][20]
         use_mask = rr > thd
         # #
         # thd_l = np.quantile(rr, 0.95)
@@ -348,19 +505,21 @@ def scramble_digits(data, seed=0, permute_epochs=False, add_permute=False):
     
 
 if __name__ == '__main__':
-
+    
+    print('\n\n***************\n\nstarting\n\n*********************\n\n')
+    
     V_SAMP_PER_SEC = 10
     V_SAMP_PER_SEC_RDM = 1
     AUTO_OR_CROSS_ACTIVATION = "CROSS"  # "AUTO": generate session rdm from single epoch set (diagonal = 1); "CROSS": cross-correlate two epoch sets
-    MIN_TGAP, MAX_TGAP = 60, 144#144, 336#24, 48
+    MIN_TGAP, MAX_TGAP = 24, 480#144, 336#24, 48
     CONTACT_SPLIT = None # None: use all, 0: even contacts only, 1: odd contacts only
     #event_type = 'CNTDWN' # one of: 'CNTDWN', 'RECALL', 'DSTRCT', 'REST'
     #
     RAW_EPOCH_AVG = 1
-    WITHIN_SESSION_PROCESS = True
+    WITHIN_SESSION_PROCESS = False
     if WITHIN_SESSION_PROCESS:
         MIN_TGAP, MAX_TGAP = 1, 1000
-        WITHIN_SESSION_SEGMENT_SIZE, WITHIN_SESSION_PAIR_IDX = 6, 1
+        WITHIN_SESSION_SEGMENT_SIZE, WITHIN_SESSION_PAIR_IDX = 8, 1# 6, 1
         #WITHIN_SESSION_SEGMENT_SIZE, WITHIN_SESSION_PAIR_IDX = 3, 1
         EPOCHS_TO_READ = 18
     else:
@@ -386,37 +545,41 @@ if __name__ == '__main__':
                                                                                            num_epochs=18, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
     
     list_1R, list_2R = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
-                                                                                           proc_type='gamma_c_60_160', event_list=['CNTRL'], 
+                                                                                           proc_type='gamma_c_60_160', event_list=['RECALL'], 
                                                                                            num_epochs=18, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
     
     (list_1C, list_2C, list_1R, list_2R) = data_availability_obj.intersect_epoch_files_and_contact_lists([list_1C, list_2C, list_1R, list_2R])
+    print('A')
     
     #list_1C, list_2C, list_1R, list_2R = list_1C[:1], list_2C[:1], list_1R[:1], list_2R[:1]
     
     contact_info = data_availability_obj.get_contact_info(list_1C)
+    print('B')
     #
-    SELECT_BY_REGION = False
-    SELECT_BY_NET = True
+    SELECT_BY_REGION = True
     if SELECT_BY_REGION:
-        #_, contact_info = select_channels_by_regions(contact_info=contact_info, region_list=['fusiform-L', 'fusiform-R'])
-        _, contact_info = select_channels_by_regions(contact_info=contact_info, region_list=['middletemporal-L', 'middletemporal-R1',
-                                                                                            'superiortemporal-L', 'superiortemporal-R1',
-                                                                                            'rostralmiddlefrontal-L', 'rostralmiddlefrontal-R1'])
+        early_list = ['pericalcarine-R', 'cuneus-R', 'lingual-R', 'lateraloccipital-R', 'pericalcarine-L', 'cuneus-L', 'lingual-L', 'lateraloccipital-L']
+        mid_list = ['fusiform-R', 'inferiortemporal-R', 'parahippocampal-R', 'fusiform-L', 'inferiortemporal-L', 'parahippocampal-L']
+        late_list = ['precuneus-R', 'superiorparietal-R', 'precuneus-L', 'superiorparietal-L']
+        region_list = ['fusiform-R', 'inferiortemporal-R', 'fusiform-L', 'inferiortemporal-L']#early_list + mid_list
+        # _, contact_info = select_channels_by_regions(contact_info=contact_info, region_list=['fusiform-L', 'fusiform-R'])
+        _, contact_info = select_channels_by_regions(contact_info=contact_info, region_list=region_list)
         contact_info_imp = contact_info
-    if SELECT_BY_NET:
-        _, contact_info_imp = get_sublist_by_importance(fname=os.path.join(IDXS_FOLDER, 'contact importance'), q=0.90, reverse=False)
-    if SELECT_BY_REGION or SELECT_BY_NET:
-        list_1C, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_1C, contact_info=contact_info_imp)
-        list_2C, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_2C, contact_info=contact_info_imp)
-        list_1R, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_1R, contact_info=contact_info_imp)
-        list_2R, contact_info = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_2R, contact_info=contact_info_imp)
+    else:
+        _, contact_info_imp = get_sublist_by_importance(fname=os.path.join(IDXS_FOLDER, 'contact importance'), q=0.85)
+    list_1C, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_1C, contact_info=contact_info_imp)
+    list_2C, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_2C, contact_info=contact_info_imp)
+    list_1R, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_1R, contact_info=contact_info_imp)
+    list_2R, contact_info = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_2R, contact_info=contact_info_imp)
     #
     
-    boundary_sec = np.arange(start=-1, stop=11+1e-6, step=1/V_SAMP_PER_SEC)
+    boundary_sec = np.arange(start=-2, stop=12+1e-6+1, step=0.02)#1/V_SAMP_PER_SEC)
 
     # read data
-    data_1C, cntct_mask = read_epoch_files_by_list(list_1C, first_epoch=0, last_epoch=EPOCHS_TO_READ, boundary_sec=boundary_sec, random_shift=False)
-    data_1R, _ = read_epoch_files_by_list(list_1R, first_epoch=0, last_epoch=EPOCHS_TO_READ, boundary_sec=boundary_sec, random_shift=False, verbose=False)
+    data_1C, cntct_mask = read_epoch_files_by_list(list_1C, first_epoch=0, last_epoch=EPOCHS_TO_READ, boundary_sec=boundary_sec, random_shift=False, norm_baseline=[-0.5, -0.05])
+    print('C')
+    data_1R, _ = read_epoch_files_by_list(list_1R, first_epoch=0, last_epoch=EPOCHS_TO_READ, boundary_sec=boundary_sec, random_shift=False, verbose=False, norm_baseline=[-0.5, -0.05])
+    print('D')
     #
     # data_raw = np.copy(data_1C[:, cntct_mask, :])
     #
@@ -440,8 +603,7 @@ if __name__ == '__main__':
     data_2R = data_2R[:, cntct_mask, :]
     contact_info = [contact_info[i] for i in np.argwhere(cntct_mask).flatten().astype(int)]
     
-    digit_permute_obj = digit_permutator()
-    np.random.seed(2)
+    digit_permute_obj = digit_permutator_8(num_digits=28, fs=50)
     pidxs = np.random.choice(digit_permute_obj.get_num_perms(), size=2, replace=False)
     print(pidxs)
         
@@ -453,13 +615,14 @@ if __name__ == '__main__':
             #     continue
             if SPLIT != 'ALL':
                 continue
-            if USE == 'HIGH_RESP':
+            if USE != 'HIGH_RESP':
                 continue
             
             SLCT_CONTACTS_BY_CONTRAST = False
             if not SLCT_CONTACTS_BY_CONTRAST:
                 data_1C_, data_2C_, data_1R_, data_2R_, contact_info_, _ = \
                     get_contact_subset(data_1C, data_2C, data_1R, data_2R, contact_info, boundary_sec=boundary_sec, USE=USE, SPLIT=SPLIT)
+                #data_1C_, data_2C_ = data_1C_[:, 20:], data_2C_[:, 20:]
                 print(data_1C_.shape, data_2C_.shape, data_1R_.shape, data_2R_.shape, len(contact_info_))
             #
             if SLCT_CONTACTS_BY_CONTRAST:
@@ -477,6 +640,7 @@ if __name__ == '__main__':
             # data_1C = data_raw[0:6, mask]
             # data_2C = data_raw[6:12, mask]
             #
+            
 
             for event in ['CNTDWN', 'RECALL']:
 
@@ -497,23 +661,6 @@ if __name__ == '__main__':
                 ax.set_ylim((-0.1, 0.3))
                 ax.grid(True)
                 ax.set_title('PSTH   ({} contacts)'.format(psth_by_cntct.shape[0]))
-                # #
-                # psth_by_cntct = data_1_[:6].mean(axis=0)
-                # psth_all_1 = psth_by_cntct.mean(axis=0)
-                # psth_all_sem_2 = psth_by_cntct.std(axis=0) / np.sqrt(psth_by_cntct.shape[0])
-                # psth_by_cntct = data_2_[:6].mean(axis=0)
-                # psth_all_2 = psth_by_cntct.mean(axis=0)
-                # psth_all_sem_2 = psth_by_cntct.std(axis=0) / np.sqrt(psth_by_cntct.shape[0])
-                # fig, ax = plt.subplots(1, 1)
-                # ax.plot((boundary_sec[:-1] + boundary_sec[1:]) / 2, np.log(psth_all_1), label='epochs 1-6')
-                # ax.plot((boundary_sec[:-1] + boundary_sec[1:]) / 2, np.log(psth_all_2), label='epochs 7-12')
-                # ax.set_ylim((-0.1, 0.3))
-                # ax.grid(True)
-                # ax.legend()
-                # ax.set_title('PSTH   ({} contacts), activity avaluated on epochs 1-6'.format(psth_by_cntct.shape[0]))
-                # #
-                # ax.set_ylim((0.5, 1.5))
-                #fig.savefig(os.path.join(os.path.expanduser('~'), 'figs', 'PSTH.pdf'))
                 mysavefig(name='PSTH', subfolder=output_folder, fig=fig)
                 mysavedata(subfolder=output_folder, name='PSTH', data=dict({'boundary_sec': boundary_sec, 'psth': psth_all, 'psth_sem': psth_all_sem}))
                 
@@ -525,45 +672,45 @@ if __name__ == '__main__':
                 with open(os.path.join(os.path.expanduser('~'), 'figs', output_folder, 'contact_data'), 'wb') as fd:
                     pickle.dump({'contact_info': contact_info_}, fd)
                 
-                
-                input_tscale = boundary_sec[:-1]
-                #boundary_sec = np.arange(start=boundary_sec[0], stop=boundary_sec[-1], step=1)
-                data_1_ = resample_epoch(data_1_, fs=V_SAMP_PER_SEC, tscale=input_tscale, boundary_sec=np.arange(start=boundary_sec[0], stop=boundary_sec[-1]+1e-6, step=1/V_SAMP_PER_SEC_RDM))
-                data_2_ = resample_epoch(data_2_, fs=V_SAMP_PER_SEC, tscale=input_tscale, boundary_sec=np.arange(start=boundary_sec[0], stop=boundary_sec[-1]+1e-6, step=1/V_SAMP_PER_SEC_RDM))
-                # make_amp_hists(np.concatenate((data_1_, data_2_), axis=0))
-                # assert False
-                # #
-                # from fc_tools import *
-                # fig = show_fc_map(generate_global_fc_map(data_1_[:, 10000:11000:5]))
-                # mysavefig(name='functional connectivity', subfolder=output_folder, fig=fig)
+                # many rdms with small time shifts
+                # data_1C_ = digit_permute_obj(data_1C_, permid=pidxs[0])
+                # data_2C_ = digit_permute_obj(data_2C_, permid=pidxs[0])
+                #
+                from correlation_tools_comb import my_flow
+                data_1C_ = data_1C_.mean(axis=1)[:, np.newaxis, :]
+                data_2C_ = data_2C_.mean(axis=1)[:, np.newaxis, :]
+                my_flow(data_1C_[:16],  data_2C_[:16], boundary_sec=boundary_sec)
+                assert False
                 #
                 
-                REMOVE_AVG = False
-                PERMUTE_DIGITS = True
-
-                if REMOVE_AVG:
-                    # remove average per epoch
-                    avg = data_1_[:, :, :].mean(axis=-1)
-                    data_1_ -= np.array([avg for i in range(data_1_.shape[2])]).transpose((1, 2, 0))
-                    avg = data_2_[:, :, :].mean(axis=-1)
-                    data_2_ -= np.array([avg for i in range(data_2_.shape[2])]).transpose((1, 2, 0))
+                
+                # # remove average per epoch
+                # avg = data_1_[:, :, :].mean(axis=-1)
+                # data_1_ -= np.array([avg for i in range(data_1_.shape[2])]).transpose((1, 2, 0))
+                # avg = data_2_[:, :, :].mean(axis=-1)
+                # data_2_ -= np.array([avg for i in range(data_2_.shape[2])]).transpose((1, 2, 0))
+                
+                #
+                
+                #
                 
                 # data_1_ = scramble_digits(data_1_, seed=-2, permute_epochs=True)
                 # data_2_ = scramble_digits(data_2_, seed=-2, add_permute=True)
                 
-                if PERMUTE_DIGITS:
-                    print(np.round(data_1_[:, 0, :], decimals=3))
-                    data_1_ = digit_permute_obj(data_1_, permid=pidxs[0])
-                    print(np.round(data_1_[:, 0, :], decimals=3))
-                    print('\n\n')
-                    print(np.round(data_2_[:, 0, :], decimals=3))
-                    data_2_ = digit_permute_obj(data_2_, permid=pidxs[1])
-                    print(np.round(data_2_[:, 0, :], decimals=3))
+                print(np.round(data_1_[:, 0, :], decimals=3))
+                #data_1_ = digit_permute_obj(data_1_, permid=pidxs[0])
+                print(np.round(data_1_[:, 0, :], decimals=3))
+                print('\n\n')
+                print(np.round(data_2_[:, 0, :], decimals=3))
+                #data_2_ = digit_permute_obj(data_2_, permid=pidxs[1])
+                print(np.round(data_2_[:, 0, :], decimals=3))
+                data_1_ = np.concatenate((data_1_[:4].mean(axis=0)[np.newaxis, :, :], data_1_[4:].mean(axis=0)[np.newaxis, :, :]), axis=0)
+                data_2_ = np.concatenate((data_2_[:4].mean(axis=0)[np.newaxis, :, :], data_2_[4:].mean(axis=0)[np.newaxis, :, :]), axis=0)
                 #
                 contact_info_ = contact_info_[:]
                 #
                 print('size of data:', data_1_.shape, data_2_.shape)
-                do_rdm_analisys(data_1_, data_2_, epoch_count=6, output_folder=output_folder, v_samp_per_sec=V_SAMP_PER_SEC_RDM, contact_info=contact_info_)
+                do_rdm_analisys(data_1_, data_2_, epoch_count=2, output_folder=output_folder, v_samp_per_sec=V_SAMP_PER_SEC_RDM, contact_info=contact_info_)
                 plt.close()
                 #assert False
                 
