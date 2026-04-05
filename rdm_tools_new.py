@@ -113,7 +113,10 @@ def calc_rdm(data, rdm_size, pre_ignore, delta_time_smple, corr_mode='p'):
         for t2 in range(rdm_size):
             sig1 = data[src0, :, pre_ignore + t1 * delta_time_smple:pre_ignore + (t1 + 1) * delta_time_smple].flatten()
             sig2 = data[src1, :, pre_ignore + t2 * delta_time_smple:pre_ignore + (t2 + 1) * delta_time_smple].flatten()
-            rdm[t1, t2] = pierson(sig1, sig2)
+            if sig1.size > 1:
+                rdm[t1, t2] = pierson(sig1, sig2)
+            else:
+                rdm[t1, t2] = np.abs(sig2 - sig1)
 
     return rdm
 
@@ -254,8 +257,12 @@ def resample_epoch(data, fs, tscale, boundary_sec):
     resampled = np.zeros((data.shape[0], data.shape[1], boundary_sec.shape[-1] - 1))
     if boundary_sec.ndim == 1:
         for i, (start, stop) in enumerate(zip(boundary_sec[:-1], boundary_sec[1:])):
-            mask = (tscale >= start) * (tscale < stop)
-            resampled[:, :, i] = data[:, :, mask].mean(axis=-1)
+            mask = (tscale >= start - 1e-6) * (tscale < stop - 1e-6)
+            try:
+                resampled[:, :, i] = data[:, :, mask].mean(axis=-1)
+            except:
+                print('here', start, stop)
+                resampled[:, :, i] = 0
             #resampled[:, :, i] = np.linalg.norm(data[:, :, mask], axis=-1) / np.sqrt(mask.sum())
     
     if boundary_sec.ndim == 2:
@@ -291,7 +298,7 @@ def resample_epoch(data, fs, tscale, boundary_sec):
 
 
 def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1, 
-                             boundary_sec=np.arange(start=-1, stop=12, step=1),
+                             boundary_sec=np.arange(start=-1, stop=12, step=1), norm_per_epoch=True,
                              norm_baseline=[-0.5, -0.05], random_shift=False, ovf_thd=3, verbose=True):
     
     # the returned array has dimensions (epoch, contact, time)
@@ -306,6 +313,7 @@ def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1,
         mne_obj = mne.read_epochs(fname, verbose=False)
         fs = mne_obj.info['sfreq']
         tscale = mne_obj.times
+        #print(tscale[0], tscale[-1], tscale.size)
         cmask = [name in contacts for name in mne_obj.ch_names]
         subject_signals = mne_obj.get_data()[first_epoch:last_epoch, cmask]
         nmask = (tscale >= norm_baseline[0]) * (tscale <= norm_baseline[-1])
@@ -335,6 +343,8 @@ def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1,
     nominal_nf = 1 / np.median(norms)
     max_nf = 3 * nominal_nf
     nf = np.minimum(1 / norms, max_nf)
+    if not norm_per_epoch:
+        nf = np.tile(nf.mean(axis=0, keepdims=True), (nf.shape[0], 1))
     data = np.repeat(nf[:, :, np.newaxis], data.shape[-1], axis=2) * data
     
     # detect bad contacts

@@ -573,12 +573,14 @@ if __name__ == '__main__':
     list_2R, contact_info = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_2R, contact_info=contact_info_imp)
     #
     
-    boundary_sec = np.arange(start=-2, stop=12+1e-6+1, step=0.02)#1/V_SAMP_PER_SEC)
+    boundary_sec = np.arange(start=-5, stop=12+1e-6+3, step=0.02)#1/V_SAMP_PER_SEC)
 
     # read data
-    data_1C, cntct_mask = read_epoch_files_by_list(list_1C, first_epoch=0, last_epoch=EPOCHS_TO_READ, boundary_sec=boundary_sec, random_shift=False, norm_baseline=[-0.5, -0.05])
+    data_1C, cntct_mask = read_epoch_files_by_list(list_1C, first_epoch=0, last_epoch=EPOCHS_TO_READ, norm_per_epoch=True,
+                                                   boundary_sec=boundary_sec, random_shift=False, norm_baseline=[-5, 15])#[-0.5, -0.05])#
     print('C')
-    data_1R, _ = read_epoch_files_by_list(list_1R, first_epoch=0, last_epoch=EPOCHS_TO_READ, boundary_sec=boundary_sec, random_shift=False, verbose=False, norm_baseline=[-0.5, -0.05])
+    data_1R, _ = read_epoch_files_by_list(list_1R, first_epoch=0, last_epoch=EPOCHS_TO_READ, norm_per_epoch=True, 
+                                          boundary_sec=boundary_sec, random_shift=False, verbose=False, norm_baseline=[-5, 15])#[-0.5, -0.05])#
     print('D')
     #
     # data_raw = np.copy(data_1C[:, cntct_mask, :])
@@ -593,8 +595,10 @@ if __name__ == '__main__':
         data_2R = data_1R[scnd_start_idx:scnd_start_idx+WITHIN_SESSION_SEGMENT_SIZE]
         data_1R = data_1R[:WITHIN_SESSION_SEGMENT_SIZE]
     else:
-        data_2C, cntct_mask_2 = read_epoch_files_by_list(list_2C, first_epoch=0, last_epoch=18, boundary_sec=boundary_sec, random_shift=False)
-        data_2R, _ = read_epoch_files_by_list(list_2R, first_epoch=0, last_epoch=18, boundary_sec=boundary_sec, random_shift=True, verbose=False)
+        data_2C, cntct_mask_2 = read_epoch_files_by_list(list_2C, first_epoch=0, last_epoch=18, norm_per_epoch=True,
+                                                         boundary_sec=boundary_sec, random_shift=False, norm_baseline=[5, 15])#[-0.5, -0.05])#
+        data_2R, _ = read_epoch_files_by_list(list_2R, first_epoch=0, last_epoch=18, norm_per_epoch=True,
+                                              boundary_sec=boundary_sec, random_shift=True, verbose=False, norm_baseline=[5, 15])#[-0.5, -0.05])#
         cntct_mask = cntct_mask * cntct_mask_2
 
     data_1C = data_1C[:, cntct_mask, :]
@@ -677,7 +681,16 @@ if __name__ == '__main__':
                 # data_2C_ = digit_permute_obj(data_2C_, permid=pidxs[0])
                 #
                 from correlation_tools_comb import my_flow
-                my_flow(data_1C_[:16],  data_2C_[:16], boundary_sec=boundary_sec)
+                # data_1C_ = data_1C_.mean(axis=1)[:, np.newaxis, :][:, :1, :]
+                # data_2C_ = data_2C_.mean(axis=1)[:, np.newaxis, :][:, :1, :]
+                # mid = int(data_1C_.shape[1] / 2)
+                # data_1C_ = np.concatenate((data_1C_[:, :mid].mean(axis=1)[:, np.newaxis, :],
+                #                            data_1C_[:, mid:].mean(axis=1)[:, np.newaxis, :]), axis=1)
+                # data_2C_ = np.concatenate((data_2C_[:, :mid].mean(axis=1)[:, np.newaxis, :],
+                #                            data_2C_[:, mid:].mean(axis=1)[:, np.newaxis, :]), axis=1)
+                s0 = 0
+                my_flow(data_1C_[:16],  data_2C_[:16], boundary_sec=boundary_sec,
+                        use=[-2, 12], keep_margin=[-2, 13], add_margin=0)
                 assert False
                 #
                 

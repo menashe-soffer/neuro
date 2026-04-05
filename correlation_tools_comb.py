@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib
+matplotlib.use('agg')
 import matplotlib.pyplot as plt
 
 from rdm_tools_new import resample_epoch, calc_rdm, pierson, mysavefig
@@ -7,26 +9,52 @@ from rdm_tools_new import resample_epoch, calc_rdm, pierson, mysavefig
 TSTART, TSTOP = -2, 12
 
 
-def get_1s_comb(data, boundary_sec, tshift, interval=0.1):
+def get_1s_comb(data, boundary_sec, tshift, interval=0.1, span=14):
     
     dt = np.diff(boundary_sec)[0]
-    local_boundary_sec = np.arange(start=TSTART+tshift, stop=TSTOP+1e-6+tshift, step=interval)
+    local_boundary_sec = np.arange(start=boundary_sec[0]+tshift, stop=(boundary_sec[0] + span)+1e-6+tshift, step=interval)
     data = resample_epoch(data, fs=1/dt, tscale=boundary_sec[:-1], boundary_sec=local_boundary_sec)
     
     return data[:, :, ::int(1 / interval)]
 
 
 
-def make_rdm_and_act_sets(data, boundary_sec, shift_step=0.02, shiftrange=1):
+def make_rdm_and_act_sets(data, boundary_sec, shift_step=0.02, signal_span=None, use=None):
     
+    
+    if use is None:
+        use = [boundary_sec[0], boundary_sec[-1]]
+
+    signal_span = use[-1] - use[0]
+    shiftrange = boundary_sec[-1] - boundary_sec[0] - signal_span
+
+    # # if signal_span is None:
+    # #     signal_span = boundary_sec[-1] - boundary_sec[0] - 1
+    # #     shiftrange = 1
+    # # else:
+    # #     shiftrange = boundary_sec[-1] - boundary_sec[0] - signal_span
+    #    # full session signals
+    # if use:
+    #     mask = (boundary_sec >= use[0] - 1e-9) * (boundary_sec <= use[-1] + 1e-9)
+    #     boundary_sec_ = boundary_sec[mask]
+    #     data_ = data[:, :, mask[:-1]][:, :, :boundary_sec_.size - 1]
+    #     # calculate legth of zero pad
+    #     marg_left = use[0] - boundary_sec[0]
+    #     marg_right = boundary_sec[-1] - use[-1]
+        
     epoch_rdm_set, session_rdm_set, act_set = [], [], []
     for tshift in np.arange(start=0, stop=shiftrange, step=shift_step):
-        comb = get_1s_comb(data, boundary_sec=boundary_sec, tshift=tshift)
+        comb = get_1s_comb(data, boundary_sec=boundary_sec, tshift=tshift, span=signal_span)
         short_rdm = np.zeros((comb.shape[-1], comb.shape[-1]))
         for i_epoch in range(comb.shape[0]):
             short_rdm += calc_rdm(data=comb[i_epoch:i_epoch+1], rdm_size=comb.shape[-1],
                                   pre_ignore=0, delta_time_smple=1)
         epoch_rdm_set.append(short_rdm)
+        # if use:
+        #     comb_ = get_1s_comb(data_, boundary_sec=boundary_sec_, tshift=tshift, span=signal_span)
+        #     #print('\t--\t', tshift, comb.shape)
+        # else:
+        #     comb_ = comb
         act_vec = comb.transpose((1, 0, 2)).reshape(comb.shape[1], comb.shape[0] * comb.shape[2])
         act_set.append(act_vec)
         session_rdm_set.append(calc_rdm(data=act_vec[np.newaxis, :, :], rdm_size=act_vec.shape[-1], 
@@ -62,11 +90,34 @@ def calculate_rdm_correlations(rdm_set, full_matrix=False, offset=1):
 
 
 
-def my_flow(data1, data2, boundary_sec):
+def my_flow(data1, data2, boundary_sec, use=None, keep_margin=None, add_margin=0):
     
-    def single_session_flow(data, bboundary_sec):
+    def single_session_flow(data, boundary_sec, use=None, keep_margin=None, add_margin=0):
         
-        epoch_rdm_set, session_rdm_set, act_set = make_rdm_and_act_sets(data=data, boundary_sec=boundary_sec)
+        if use is not None:
+            if keep_margin is None:
+                mask = (boundary_sec >= use[0]) * (boundary_sec <= use[-1])
+            else:
+                mask = (boundary_sec >= keep_margin[0]) * (boundary_sec <= keep_margin[-1] + 1e-9)
+            boundary_sec_ = boundary_sec[mask]
+            data_ = data[:, :, mask[:-1]]
+            if add_margin > 0:
+                dt = np.diff(boundary_sec_).mean()
+                # boundary_sec_ = np.arange(start=use[0] - add_margin, stop=use[-1] + add_margin + 1e-6, step=dt)
+                # mragin_num_samples = int((boundary_sec_.size - 1 - data_.shape[-1]) / 2)
+                boundary_sec_ = np.arange(start=boundary_sec_[0] - add_margin - 1e-6, stop=boundary_sec_[-1] + add_margin + 1e-6, step=dt)
+                mragin_num_samples = int((boundary_sec_.size - 1 - data_.shape[-1]) / 2)
+                margin = np.zeros((data_.shape[0], data_.shape[1], mragin_num_samples))
+                data_ = np.concatenate((margin, data_, margin), axis=-1)
+            mismach = boundary_sec_.size - data_.shape[-1] - 1
+            assert np.abs(mismach) <= 2
+            if mismach > 0:
+                boundary_sec_ = boundary_sec_[:-mismach]
+            if mismach < 0:
+                data_ = data_[:, :, :mismach]
+        
+        epoch_rdm_set, session_rdm_set, act_set = \
+            make_rdm_and_act_sets(data=data_, boundary_sec=boundary_sec_, use=use)#signal_span=use[-1] - use[0])
         epoch_rdm_corr_func = calculate_rdm_correlations(epoch_rdm_set)
         session_rdm_corr_func = calculate_rdm_correlations(session_rdm_set)
         n = len(act_set)
@@ -84,7 +135,7 @@ def my_flow(data1, data2, boundary_sec):
     
     for i_data, data in enumerate([data1, data2]):
         epoch_rdm_corr_func, session_rdm_corr_func, activation_corr_func = \
-            single_session_flow(data, boundary_sec)
+            single_session_flow(data, boundary_sec, use=use, keep_margin=keep_margin, add_margin=add_margin)
         for i_ax in range(2):
             ax_erdm[i_ax].plot(epoch_rdm_corr_func, label='sess ' + str(i_data))
             ax_srdm[i_ax].plot(session_rdm_corr_func, label='sess ' + str(i_data))
