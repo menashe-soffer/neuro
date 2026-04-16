@@ -688,9 +688,63 @@ if __name__ == '__main__':
                 #                            data_1C_[:, mid:].mean(axis=1)[:, np.newaxis, :]), axis=1)
                 # data_2C_ = np.concatenate((data_2C_[:, :mid].mean(axis=1)[:, np.newaxis, :],
                 #                            data_2C_[:, mid:].mean(axis=1)[:, np.newaxis, :]), axis=1)
-                s0 = 0
-                my_flow(data_1C_[:16],  data_2C_[:16], boundary_sec=boundary_sec,
-                        use=[-2, 12], keep_margin=[-2, 13], add_margin=0)
+
+                # s0 = 0
+                # erdm_list, srdm_list, act_list = [], [], []
+                use = [0, 10]
+                keep_margin = [use[0], use[-1] + 1]
+                fig_erdm, ax_erdm = plt.subplots(1, 1)
+                fig_erdm.suptitle('RDM (averging over epochs) correlations, Span from {} sec to {} sec'.format(use[0], use[-1]))
+                fig_srdm, ax_srdm = plt.subplots(1, 1)
+                fig_srdm.suptitle('RDM (full session) correlations, Span from {} sec to {} sec'.format(use[0], use[-1]))
+                fig_act, ax_act = plt.subplots(1, 1)
+                fig_act.suptitle('Activation Vector (full session) correlations, Span from {} sec to {} sec'.format(use[0], use[-1]))
+
+                erdm, srdm, act, epoch_rdm_set, session_rdm_set, act_set = my_flow(data_1C_[:16],  data_2C_[:16], 
+                                                                                 boundary_sec=boundary_sec, use=use,
+                                                                                 keep_margin=keep_margin, add_margin=0, shift_step=0.02)
+
+                _, _, _, epoch_rdm_set_1, session_rdm_set_1, act_set_1 = my_flow(data_1C_[:16],  data_2C_[:16], 
+                                                                                 boundary_sec=boundary_sec, use=use,
+                                                                                 keep_margin=keep_margin, add_margin=0, shift_step=1, interval=1)
+                # erdm_list.append(erdm)
+                # srdm_list.append(srdm)
+                # act_list.append(act)
+                for sess in range(2):
+                    ax_erdm.plot(erdm[sess], label='shift {:4.2f}, sess {}'.format(0.02, sess))
+                    ax_srdm.plot(srdm[sess], label='shift {:4.2f}, sess {}'.format(0.02, sess))
+                    ax_act.plot(act[sess], label='shift {:4.2f}, sess {}'.format(0.02, sess))
+                for ax in [ax_erdm, ax_srdm, ax_act]:
+                    ax.grid(True)
+                    ax.set_ylim(-0.2, 1)
+                    ax.legend()
+                mysavefig(name='ERDM', fig=fig_erdm)
+                mysavefig(name='SRDM', fig=fig_srdm)
+                mysavefig(name='ACT', fig=fig_act)
+
+
+                fig_erdm_erdm, ax_ee = plt.subplots(1, 1)
+                fig_erdm_erdm.suptitle('correlations between 1sec and 0.1 sec EPOCH RDMs')
+                fig_srdm_srdm, ax_ss = plt.subplots(1, 1)
+                fig_srdm_srdm.suptitle('correlations between 1sec and 0.1 sec SESSION RDMs')
+                [ax.set_ylim((0, 1)) for ax in [ax_ee, ax_ss]]
+                [ax.grid(True) for ax in [ax_ee, ax_ss]]
+                
+                erdm_sz = epoch_rdm_set_1[0][0].shape[0]
+                srdm_sz = session_rdm_set_1[0][0].shape[0]
+                erdm_mask = ~np.eye(erdm_sz).astype(bool)
+                srdm_mask = ~np.eye(srdm_sz).astype(bool)
+                for i_sess in range(2):
+                    erdm_erdm, srdm_srdm = [], []
+                    for i_tshift in range(len(epoch_rdm_set)):
+                        erdm_erdm.append(pierson(epoch_rdm_set_1[i_sess][0][erdm_mask], epoch_rdm_set[i_sess][i_tshift][erdm_mask]))
+                        srdm_srdm.append(pierson(session_rdm_set_1[i_sess][0][srdm_mask], session_rdm_set[i_sess][i_tshift][srdm_mask]))
+                    ax_ee.plot(erdm_erdm, label='sess {}'.format(i_sess))
+                    ax_ss.plot(srdm_srdm, label='sess {}'.format(i_sess))
+                [ax.legend() for ax in [ax_ee, ax_ss]]
+                mysavefig(name='ERDM-ERDM', fig=fig_erdm_erdm)
+                mysavefig(name='SRDM-SRDM', fig=fig_srdm_srdm)
+                    
                 assert False
                 #
                 
