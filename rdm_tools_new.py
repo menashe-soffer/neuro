@@ -299,7 +299,7 @@ def resample_epoch(data, fs, tscale, boundary_sec):
 
 def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1, 
                              boundary_sec=np.arange(start=-1, stop=12, step=1), norm_per_epoch=True,
-                             norm_baseline=[-0.5, -0.05], random_shift=False, ovf_thd=3, verbose=True):
+                             norm_baseline=[-0.5, -0.05], random_shift=False, ovf_thd=3.5, verbose=True):
     
     # the returned array has dimensions (epoch, contact, time)
     
@@ -349,6 +349,23 @@ def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1,
     
     # detect bad contacts
     mask_ovf = data > ovf_thd
+    #
+    # fix instead of remove
+    mask_ovf_1 = mask_ovf.sum(axis=-1)
+    for i_epc in range(data.shape[0]):
+        for i_ctct in range(data.shape[1]):
+            if mask_ovf_1[i_epc, i_ctct]:
+                local_avg = data[i_epc, i_ctct, ~mask_ovf[i_epc, i_ctct]].mean()
+                local_thd = local_avg * ovf_thd
+                fixed = data[i_epc, i_ctct] * (1 - mask_ovf[i_epc, i_ctct]) + local_thd * mask_ovf[i_epc, i_ctct]
+                # plt.plot(data[i_epc, i_ctct])
+                # plt.plot(fixed)
+                # plt.title('epoch {} contact {} size {}  local_avg={:5.2f}'.format(i_epc, i_ctct, mask_ovf_1[i_epc, i_ctct], local_avg))
+                # plt.show()
+                if mask_ovf_1[i_epc, i_ctct] < int(0.02 * data.shape[-1]):
+                    data[i_epc, i_ctct] = fixed
+                    mask_ovf[i_epc, i_ctct, :] = False
+    #
     bad_epoch_contact = mask_ovf.sum(axis=-1) > 0
     bad_contact = bad_epoch_contact.sum(axis=0) > 0
     for i_epoch in range(data.shape[0]):
@@ -378,6 +395,9 @@ def relative_codes(cmat, first=0, last=-1, remove_diag=True, normalize=False):
     assert cmat.shape[0] == cmat.shape[1]
     num_cw = cmat.shape[0]
 
+    if last< 0:
+        last = cmat.shape[1]
+
     code = np.copy(cmat)
     if normalize:
         for i_cw in range(num_cw):
@@ -387,7 +407,7 @@ def relative_codes(cmat, first=0, last=-1, remove_diag=True, normalize=False):
         for i in range(num_cw):
             code[i, i] = np.nan
 
-    return code[:, first:last]
+    return code[:, first:last+1]
 
 
 
