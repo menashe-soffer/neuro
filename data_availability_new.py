@@ -200,13 +200,14 @@ class data_availability:
 
 
     def get_suitable_epoch_files_and_contacts(self, min_timegap_hrs, max_timegap_hrs, proc_type,
-                                                            event_list=[], num_epochs=1, enforce_first=False, single_session=False):
+                                                            event_list=[], num_epochs=1, enforce_first=False, single_session=False, third_session=False):
         
         
         # _ , contact_list = self.get_contacts_for_2_session_gap(min_timegap_hrs=min_timegap_hrs, max_timegap_hrs=max_timegap_hrs,
         #                                                            enforce_first=enforce_first, single_session=single_session)
         assert enforce_first
         assert len(event_list) == 1
+        assert not (single_session and third_session)
         
 
         first_epoch_lists, second_spoch_lists = [], []
@@ -223,12 +224,20 @@ class data_availability:
             if not single_session:
                 second_ok = (epoch_list['relative time'] > 0) * (epoch_list['num_epochs'] >= num_epochs) * \
                     (epoch_list['relative time'] / 3600 > min_timegap_hrs) * (epoch_list['relative time'] / 3600 < max_timegap_hrs)
+                third_ok = np.zeros_like(second_ok, dtype=bool)
                 # remove more than single consecutive session
                 if any(second_ok):
                     second_ok_idx = np.argwhere(second_ok).flatten()
                     for i in range(1, len(second_ok_idx)):
                         if epoch_list['subject'][second_ok_idx[i-1]] == epoch_list['subject'][second_ok_idx[i]]:
                             second_ok[second_ok_idx[i]] = False
+                            third_ok[second_ok_idx[i]] = True and third_session
+                # remove more than single third session
+                if any(third_ok):
+                    third_ok_idx = np.argwhere(third_ok).flatten()
+                    for i in range(1, len(third_ok_idx)):
+                        if epoch_list['subject'][third_ok_idx[i-1]] == epoch_list['subject'][third_ok_idx[i]]:
+                            third_ok[third_ok_idx[i]] = False
                 # intersect subjects
                 first_subject = np.sort(epoch_list['subject'][first_ok])
                 second_subject = np.sort(epoch_list['subject'][second_ok])
@@ -239,16 +248,24 @@ class data_availability:
                 for subject in valid_subjects:
                     i1 = np.argwhere(first_ok * (epoch_list['subject'] == subject)).squeeze()
                     i2 = np.argwhere(second_ok * (epoch_list['subject'] == subject)).squeeze()
+                    i3 = np.argwhere(third_ok * (epoch_list['subject'] == subject)).squeeze()
                     valid_contacts = list(set(epoch_list['contacts'][i1]).intersection(set(epoch_list['contacts'][i2])))
+                    if third_session:
+                        #print(subject, i3)
+                        valid_contacts = list(set(valid_contacts).intersection(set(epoch_list['contacts'][i3])))
                     print(subject, len(valid_contacts))
                     epoch_list.at[epoch_list.index[int(i1)], 'contacts'] = valid_contacts
                     epoch_list.at[epoch_list.index[int(i2)], 'contacts'] = valid_contacts
+                    if third_session and (i3.size > 0):
+                        epoch_list.at[epoch_list.index[int(i3)], 'contacts'] = valid_contacts
             else:
                 second_ok = first_ok
+                third_ok = second_ok
                 for i in np.argwhere(first_ok).flatten():
                     epoch_list['contacts']
         
-        return epoch_list[first_ok], epoch_list[second_ok]
+
+        return epoch_list[first_ok], epoch_list[second_ok], epoch_list[third_ok]
     
     
     

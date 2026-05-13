@@ -420,7 +420,7 @@ def get_contact_subset(data_1C, data_2C, data_1R, data_2R, contact_info, boundar
         use_mask = rr > thd
     if USE == 'HIGH_RESP':
         thd = np.quantile(rr, 0.975)
-        thd = max(np.sort(rr)[::-1][min(rr.size - 1, 25)], 1.1)
+        thd = max(np.sort(rr)[::-1][min(rr.size - 1, max(25, int(rr.size / 3)))], 1.1)
         use_mask = rr > thd
         # #
         # thd_l = np.quantile(rr, 0.95)
@@ -525,7 +525,7 @@ if __name__ == '__main__':
         #WITHIN_SESSION_SEGMENT_SIZE, WITHIN_SESSION_PAIR_IDX = 3, 1
         EPOCHS_TO_READ = 18
     else:
-        EPOCHS_TO_READ = 18
+        EPOCHS_TO_READ = 12
         WITHIN_SESSION_SEGMENT_SIZE = 6#len(AVG_MANY_EPOCHS)
     
     LEGACY_ANALYSIS = True
@@ -548,13 +548,13 @@ if __name__ == '__main__':
     
     list_1C, list_2C = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
                                                                                            proc_type='gamma_c_60_160', event_list=['CNTDWN'], 
-                                                                                           num_epochs=18, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
+                                                                                           num_epochs=EPOCHS_TO_READ, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
     (list_1C, list_2C) = data_availability_obj.intersect_epoch_files_and_contact_lists([list_1C, list_2C])
 
     if PROCESS_RECALL: 
         list_1R, list_2R = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
                                                                                             proc_type='gamma_c_60_160', event_list=['RECALL'], 
-                                                                                            num_epochs=18, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
+                                                                                            num_epochs=EPOCHS_TO_READ, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
         (list_1C, list_2C, list_1R, list_2R) = data_availability_obj.intersect_epoch_files_and_contact_lists([list_1C, list_2C, list_1R, list_2R])
     
 
@@ -567,15 +567,17 @@ if __name__ == '__main__':
     #
     SELECT_BY_REGION = True
     if SELECT_BY_REGION:
+        responsive_list = ['cuneus', 'pericalcarine', 'postcentral', 'precentral', 'lingual',
+                           'superiorparietal', 'inferiortemporal', 'middletemporal', 'fusiform', 'lateraloccipital']
         early_list = ['pericalcarine-R', 'cuneus-R', 'lingual-R', 'lateraloccipital-R', 'pericalcarine-L', 'cuneus-L', 'lingual-L', 'lateraloccipital-L']
         mid_list = ['fusiform-R', 'inferiortemporal-R', 'parahippocampal-R', 'fusiform-L', 'inferiortemporal-L', 'parahippocampal-L']
         late_list = ['precuneus-R', 'superiorparietal-R', 'precuneus-L', 'superiorparietal-L']
-        region_list = ['fusiform-R', 'fusiform-L']#['superiorparietal-R', 'superiorparietal-L']#early_list + mid_list
+        region_list = ['transversetemporal-R', 'transversetemporal-L']#['superiorparietal-R', 'superiorparietal-L']#early_list + mid_list
         # _, contact_info = select_channels_by_regions(contact_info=contact_info, region_list=['fusiform-L', 'fusiform-R'])
         _, contact_info = select_channels_by_regions(contact_info=contact_info, region_list=region_list)
         contact_info_imp = contact_info
     else:
-        _, contact_info_imp = get_sublist_by_importance(fname=os.path.join(IDXS_FOLDER, 'contact importance'), q=0.85)
+        contact_info_imp = contact_info
     list_1C, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_1C, contact_info=contact_info_imp)
     list_2C, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_2C, contact_info=contact_info_imp)
     # list_1R, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_1R, contact_info=contact_info_imp)
@@ -599,7 +601,7 @@ if __name__ == '__main__':
         # data_2R = data_1R[scnd_start_idx:scnd_start_idx+WITHIN_SESSION_SEGMENT_SIZE]
         # data_1R = data_1R[:WITHIN_SESSION_SEGMENT_SIZE]
     else:
-        data_2C, cntct_mask_2 = read_epoch_files_by_list(list_2C, first_epoch=0, last_epoch=18, norm_per_epoch=True,
+        data_2C, cntct_mask_2 = read_epoch_files_by_list(list_2C, first_epoch=0, last_epoch=EPOCHS_TO_READ, norm_per_epoch=True,
                                                          boundary_sec=boundary_sec, random_shift=False, norm_baseline=[5, 15])#[-0.5, -0.05])#
         # data_2R, _ = read_epoch_files_by_list(list_2R, first_epoch=0, last_epoch=18, norm_per_epoch=True,
         #                                       boundary_sec=boundary_sec, random_shift=True, verbose=False, norm_baseline=[5, 15])#[-0.5, -0.05])#
@@ -651,7 +653,7 @@ if __name__ == '__main__':
                 # data_2R_ = data_2R[:, mask]
                 contact_info_ = [contact_info[i] for i in np.argwhere(mask).flatten().astype(int)]
             
-            if len(contact_info_) < 10:
+            if (USE != 'ALL') and (len(contact_info_) < 10):
                 continue
              
 
@@ -807,7 +809,8 @@ if __name__ == '__main__':
                     data_2C__ = resample_epoch(data_2_, fs=V_SAMP_PER_SEC, tscale=boundary_sec[:-1], boundary_sec=np.arange(start=-1+1, stop=11+1e-6-1, step=1))
                     #
                     print('size of data:', data_1_.shape, data_2_.shape)
-                    do_rdm_analisys(data_1C__, data_2C__, epoch_count=6, output_folder=output_folder, v_samp_per_sec=V_SAMP_PER_SEC_RDM, contact_info=contact_info_)
+                    do_rdm_analisys(data_1C__, data_2C__, epoch_count=6, output_folder=output_folder, 
+                                    v_samp_per_sec=V_SAMP_PER_SEC_RDM, contact_info=contact_info_)
                     plt.close()
                     #assert False
                     
