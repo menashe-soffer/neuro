@@ -416,7 +416,9 @@ def select_channels_by_regions(contact_info, region_list=[], soft=False):
     for i_cntct, cntct in enumerate(contact_info):
         ok1 = cntct['location'][0]['region'] in region_list
         ok2 = cntct['location'][1]['region'] in region_list
+        #ok3 = cntct['location'][0]['region'] == cntct['location'][1]['region']
         mask[i_cntct] = (ok1 or ok2) if soft else (ok1 and ok2)
+        #mask[i_cntct] = mask[i_cntct] and ok3
     
     return mask, [contact_info[i] for i in np.argwhere(mask).flatten()]
 

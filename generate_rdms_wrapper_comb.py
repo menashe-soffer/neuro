@@ -546,13 +546,13 @@ if __name__ == '__main__':
     # prepare contact list
     # stage 1: find suitable contacts
     
-    list_1C, list_2C = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
+    list_1C, list_2C, _ = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
                                                                                            proc_type='gamma_c_60_160', event_list=['CNTDWN'], 
                                                                                            num_epochs=EPOCHS_TO_READ, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
     (list_1C, list_2C) = data_availability_obj.intersect_epoch_files_and_contact_lists([list_1C, list_2C])
 
     if PROCESS_RECALL: 
-        list_1R, list_2R = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
+        list_1R, list_2R, _ = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
                                                                                             proc_type='gamma_c_60_160', event_list=['RECALL'], 
                                                                                             num_epochs=EPOCHS_TO_READ, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
         (list_1C, list_2C, list_1R, list_2R) = data_availability_obj.intersect_epoch_files_and_contact_lists([list_1C, list_2C, list_1R, list_2R])
@@ -572,7 +572,7 @@ if __name__ == '__main__':
         early_list = ['pericalcarine-R', 'cuneus-R', 'lingual-R', 'lateraloccipital-R', 'pericalcarine-L', 'cuneus-L', 'lingual-L', 'lateraloccipital-L']
         mid_list = ['fusiform-R', 'inferiortemporal-R', 'parahippocampal-R', 'fusiform-L', 'inferiortemporal-L', 'parahippocampal-L']
         late_list = ['precuneus-R', 'superiorparietal-R', 'precuneus-L', 'superiorparietal-L']
-        region_list = ['transversetemporal-R', 'transversetemporal-L']#['superiorparietal-R', 'superiorparietal-L']#early_list + mid_list
+        region_list = ['fusiform-R', 'fusiform-L']#['superiorparietal-R', 'superiorparietal-L']#early_list + mid_list
         # _, contact_info = select_channels_by_regions(contact_info=contact_info, region_list=['fusiform-L', 'fusiform-R'])
         _, contact_info = select_channels_by_regions(contact_info=contact_info, region_list=region_list)
         contact_info_imp = contact_info
