@@ -11,7 +11,8 @@ import tqdm
 import shutil
 
 #from itertools import combinations
-
+import argparse
+import sys
 
 
 
@@ -90,7 +91,7 @@ def get_contact_subset(data_1C, data_2C, data_3C, data_1R, data_2R, data_3R,
      
     return data_1C_, data_2C_, data_3C_, data_1R_, data_2R_, data_3R_, contact_info_, mask
 
-ax[i_row, i_col].plot(data['HIGH_RESP']['even_odd']['PSTH']['psth_set'][region][0][0])
+
 ALL_REGIONS = ['bankssts', 'caudalanteriorcingulate', 'caudalmiddlefrontal', 'cuneus', 'entorhinal', 'frontalpole', 'fusiform', 
                'inferiorparietal', 'inferiortemporal', 'insula', 'isthmuscingulate', 'lateraloccipital', 'lateralorbitofrontal',
                'lingual', 'medialorbitofrontal', 'middletemporal', 'mix', 'paracentral', 'parahippocampal', 'parsopercularis',
@@ -103,31 +104,71 @@ RESPONSIVE_REGIONS = ['cuneus', 'pericalcarine', 'postcentral', 'precentral', 'l
 
 EXTENSION_REGIONS = ['bankssts', 'caudalmiddlefrontal', 'inferiorparietal', 'insula', 'lateralorbitofrontal', 'lingual',
                      'parsopercularis', 'parstriangularis', 'precuneus', 'rostralmiddlefrontal', 'superiorfrontal',
-                     'superiorparietal', 'superiortemporal', 'superiortemporal']
+                     'superiorparietal', 'superiortemporal']
 
     
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
+
 
 if __name__ == '__main__':
     
     print('\n\n***************\n\nstarting\n\n*********************\n\n')
     
+# 1. Set up the argument parser
+    parser = argparse.ArgumentParser(description="Run session analysis with custom parameters.")
+    
+    # 2. Define the parameters with their current default values
+    parser.add_argument('--NUM_SESSIONS', type=int, default=1, choices=[1, 2, 3],
+                        help='Number of sessions (1, 2, or 3)')
+    parser.add_argument('--SELECT_BY_EPOCHS', type=str, default='all', choices=['all', 'odd', 'even', 'first', 'second'],
+                        help='Epoch selection strategy')
+    parser.add_argument('--CALC_BY_EPOCHS', type=str, default='odd', choices=['all', 'odd', 'even', 'first', 'second'],
+                        help='Epoch calculation strategy')
+    parser.add_argument('--X_CNCT_CNTCTS', type=str2bool, default=False,
+                        help='Cross-connect contacts (True/False)')
+    parser.add_argument('--X_CNCT_EPOCHS', type=str2bool, default=True,
+                        help='Cross-connect epochs (True/False)')
+
+    # 3. Parse the arguments from the command line
+    args = parser.parse_parser() if hasattr(parser, 'parse_parser') else parser.parse_args()
+
+    # 4. Map them to your existing variable names
+    NUM_SESSIONS = args.NUM_SESSIONS
+    SELECT_BY_EPOCHS = args.SELECT_BY_EPOCHS
+    CALC_BY_EPOCHS = args.CALC_BY_EPOCHS
+    X_CNCT_CNTCTS = args.X_CNCT_CNTCTS
+    X_CNCT_EPOCHS = args.X_CNCT_EPOCHS
+
+    # --- Your remaining static constants stay the same ---
+    print('\n\n***************\n\nstarting\n\n*********************\n\n')
+    
     V_SAMP_PER_SEC = 10
     V_SAMP_PER_SEC_RDM = 1
-    #AUTO_OR_CROSS_ACTIVATION = "CROSS"  # "AUTO": generate session rdm from single epoch set (diagonal = 1); "CROSS": cross-correlate two epoch sets
-    MIN_TGAP, MAX_TGAP = 24, 480#144, 336#24, 48
-    CONTACT_SPLIT = None # None: use all, 0: even contacts only, 1: odd contacts only
-    #event_type = 'CNTDWN' # one of: 'CNTDWN', 'RECALL', 'DSTRCT', 'REST'
-    #
+    MIN_TGAP, MAX_TGAP = 24, 480
+    CONTACT_SPLIT = None 
     RAW_EPOCH_AVG = 1
     SELECT_BY_REGION = True
-    #
-    X_CNCT_CNTCTS = True
-    X_CNCT_EPOCHS = False
-    #
     SEM_BY_CONTACT = True
 
-    NUM_SESSIONS = 1
+    # Keep your structural assertion safety check
     assert NUM_SESSIONS in [1, 2, 3]
+
+    # Print parsed parameters to verify they look correct in logs
+    print(f"Running with: NUM_SESSIONS={NUM_SESSIONS}, SELECT_BY_EPOCHS='{SELECT_BY_EPOCHS}', "
+          f"CALC_BY_EPOCHS='{CALC_BY_EPOCHS}', X_CNCT_CNTCTS={X_CNCT_CNTCTS}, X_CNCT_EPOCHS={X_CNCT_EPOCHS}\n")
+    
+    
     WITHIN_SESSION_PROCESS = NUM_SESSIONS == 1
     THIRD_SESSION = NUM_SESSIONS == 3
     if WITHIN_SESSION_PROCESS:
@@ -184,7 +225,7 @@ if __name__ == '__main__':
     list_1C_full, list_2C_full, list_3C_full, contact_info_full = copy.copy(list_1C), copy.copy(list_2C), copy.copy(list_3C), copy.copy(contact_info)
     erased_folder_list = []
     slct_masks = dict()
-    psth_set = dict()
+    psth_set = dict({'ALL': dict(), 'HIGH_RESP': dict()})
     for base_region in RESPONSIVE_REGIONS + EXTENSION_REGIONS:
         
         list_1C, list_2C, list_3C, contact_info = copy.copy(list_1C_full), copy.copy(list_2C_full), copy.copy(list_3C_full), copy.copy(contact_info_full)
@@ -192,8 +233,8 @@ if __name__ == '__main__':
 
         #
         if SELECT_BY_REGION:
-            responsive_list = ['cuneus', 'pericalcarine', 'postcentral', 'precentral', 'lingual',
-                            'superiorparietal', 'inferiortemporal', 'middletemporal', 'fusiform', 'lateraloccipital']
+            # responsive_list = ['cuneus', 'pericalcarine', 'postcentral', 'precentral', 'lingual',
+            #                 'superiorparietal', 'inferiortemporal', 'middletemporal', 'fusiform', 'lateraloccipital']
             # early_list = ['pericalcarine-R', 'cuneus-R', 'lingual-R', 'lateraloccipital-R', 'pericalcarine-L', 'cuneus-L', 'lingual-L', 'lateraloccipital-L']
             # mid_list = ['fusiform-R', 'inferiortemporal-R', 'parahippocampal-R', 'fusiform-L', 'inferiortemporal-L', 'parahippocampal-L']
             # late_list = ['precuneus-R', 'superiorparietal-R', 'precuneus-L', 'superiorparietal-L']
@@ -294,17 +335,32 @@ if __name__ == '__main__':
                 if True:
                     # data_1C_, data_2C_, data_1R_, data_2R_, contact_info_, _ = \
                     #     get_contact_subset(data_1C, data_2C, data_1R, data_2R, contact_info, boundary_sec=boundary_sec, USE=USE, SPLIT=SPLIT)
+                    #
+                    epoch_subset = np.arange(data_1C.shape[0])
+                    epoch_subset = epoch_subset[1::2] if SELECT_BY_EPOCHS == 'odd' else epoch_subset
+                    epoch_subset = epoch_subset[::2] if SELECT_BY_EPOCHS == 'even' else epoch_subset
+                    epoch_subset = epoch_subset[:int(data_1C.shape[0] / 2)] if SELECT_BY_EPOCHS == 'first' else epoch_subset
+                    epoch_subset = epoch_subset[int(data_1C.shape[0] / 2):] if SELECT_BY_EPOCHS == 'second' else epoch_subset
+                    #
                     _, _, _, _, _,  _, contact_info_, slct_mask = \
-                        get_contact_subset(data_1C, data_2C, data_3C, data_1C, data_2C, data_3C, 
+                        get_contact_subset(data_1C[epoch_subset], data_2C[epoch_subset], data_3C[epoch_subset], 
+                                           data_1C[epoch_subset], data_2C[epoch_subset], data_3C[epoch_subset], 
                                            contact_info, boundary_sec=boundary_sec, USE=USE, SPLIT=SPLIT)
-                    data_1C_ = data_1C[:, slct_mask]
-                    data_2C_ = data_2C[:, slct_mask]
-                    data_3C_ = data_3C[:, slct_mask]
+                    #
+                    epoch_subset = np.arange(data_1C.shape[0])
+                    epoch_subset = epoch_subset[1::2] if CALC_BY_EPOCHS == 'odd' else epoch_subset
+                    epoch_subset = epoch_subset[::2] if CALC_BY_EPOCHS == 'even' else epoch_subset
+                    epoch_subset = epoch_subset[:int(data_1C.shape[0] / 2)] if CALC_BY_EPOCHS == 'first' else epoch_subset
+                    epoch_subset = epoch_subset[int(data_1C.shape[0] / 2):] if CALC_BY_EPOCHS == 'second' else epoch_subset
+                    #
+                    data_1C_ = data_1C[epoch_subset][:, slct_mask]
+                    data_2C_ = data_2C[epoch_subset][:, slct_mask]
+                    data_3C_ = data_3C[epoch_subset][:, slct_mask]
                     print(data_1C_.shape, data_2C_.shape, data_3C_.shape, len(contact_info_))
                     slct_masks[base_region] = slct_mask
                 #
                 
-                if (USE != 'ALL') and (len(contact_info_) < 10):
+                if (USE != 'ALL') and (len(contact_info_) < 1):
                     continue
                 
 
@@ -318,7 +374,9 @@ if __name__ == '__main__':
                         else:
                             continue
                         
-                    output_folder = '{}_USE_{}_SPLIT_{}'.format(event, USE, SPLIT)
+                    output_folder = os.path.join('{} sessions'.format(NUM_SESSIONS), 
+                                                'selectby_{}_calc_{}'.format(SELECT_BY_EPOCHS, CALC_BY_EPOCHS),
+                                                 '{}_USE_{}_SPLIT_{}'.format(event, USE, SPLIT))
                     print('\n\n\nworking on', output_folder)
                     #
 
@@ -351,19 +409,19 @@ if __name__ == '__main__':
                     ax.fill_between((boundary_sec[:-1] + boundary_sec[1:]) / 2,
                                     np.log(np.maximum(psth_all_1 - psth_all_sem_1, 1e-6)),
                                     np.log(np.maximum(psth_all_1 + psth_all_sem_1, 1e-6)), color=line1.get_color(), alpha=0.2)
-                    psth_set[base_region] = [[psth_all_1, psth_all_sem_1]]
+                    psth_set[USE][base_region] = [[psth_all_1, psth_all_sem_1]]
                     if NUM_SESSIONS >= 2:
                         line2, = ax.plot((boundary_sec[:-1] + boundary_sec[1:]) / 2, np.log(psth_all_2), label='sess 2')
                         ax.fill_between((boundary_sec[:-1] + boundary_sec[1:]) / 2,
                                         np.log(np.maximum(psth_all_2 - psth_all_sem_2, 1e-6)),
                                         np.log(np.maximum(psth_all_2 + psth_all_sem_2, 1e-6)), color=line2.get_color(), alpha=0.2) 
-                        psth_set[base_region].append([psth_all_2, psth_all_sem_2])               
+                        psth_set[USE][base_region].append([psth_all_2, psth_all_sem_2])               
                     if NUM_SESSIONS >= 3:
                         line3, = ax.plot((boundary_sec[:-1] + boundary_sec[1:]) / 2, np.log(psth_all_3), label='sess 3')
                         ax.fill_between((boundary_sec[:-1] + boundary_sec[1:]) / 2,
                                         np.log(np.maximum(psth_all_3 - psth_all_sem_3, 1e-6)),
                                         np.log(np.maximum(psth_all_3 + psth_all_sem_3, 1e-6)), color=line3.get_color(), alpha=0.2)    
-                        psth_set[base_region].append([psth_all_3, psth_all_sem_3])            
+                        psth_set[USE][base_region].append([psth_all_3, psth_all_sem_3])            
                     ax.set_ylim((-0.1, 0.3))
                     ax.grid(True)
                     ax.legend()
