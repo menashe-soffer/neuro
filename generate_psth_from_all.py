@@ -198,20 +198,23 @@ if __name__ == '__main__':
 
     # prepare contact list
     # stage 1: find suitable contacts
-        
-    list_1C, list_2C, list_3C = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
-                                                                                            proc_type='gamma_c_60_160', event_list=['CNTDWN'], 
-                                                                                            num_epochs=EPOCHS_TO_READ, enforce_first=True, 
-                                                                                            single_session=WITHIN_SESSION_PROCESS, third_session=THIRD_SESSION)
-    if NUM_SESSIONS < 3:
-        list_3C = list_2C # !!! PATCH !!!
-    (list_1C, list_2C, list_3C) = data_availability_obj.intersect_epoch_files_and_contact_lists([list_1C, list_2C, list_3C])
 
-    # if PROCESS_RECALL: 
-    #     list_1R, list_2R = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
-    #                                                                                         proc_type='gamma_c_60_160', event_list=['RECALL'], 
-    #                                                                                         num_epochs=EPOCHS_TO_READ, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
-    #     (list_1C, list_2C, list_1R, list_2R) = data_availability_obj.intersect_epoch_files_and_contact_lists([list_1C, list_2C, list_1R, list_2R])
+    list_1C, subject_int_id = data_availability_obj.get_all_epoch_files_and_contacts(proc_type='gamma_c_60_160', event_list=['CNTDWN'], min_num_epochs=8)
+    
+
+    # list_1C, list_2C, list_3C = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
+    #                                                                                         proc_type='gamma_c_60_160', event_list=['CNTDWN'], 
+    #                                                                                         num_epochs=EPOCHS_TO_READ, enforce_first=True, 
+    #                                                                                         single_session=WITHIN_SESSION_PROCESS, third_session=THIRD_SESSION)
+    # if NUM_SESSIONS < 3:
+    #     list_3C = list_2C # !!! PATCH !!!
+    # (list_1C, list_2C, list_3C) = data_availability_obj.intersect_epoch_files_and_contact_lists([list_1C, list_2C, list_3C])
+
+    # # if PROCESS_RECALL: 
+    # #     list_1R, list_2R = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
+    # #                                                                                         proc_type='gamma_c_60_160', event_list=['RECALL'], 
+    # #                                                                                         num_epochs=EPOCHS_TO_READ, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
+    # #     (list_1C, list_2C, list_1R, list_2R) = data_availability_obj.intersect_epoch_files_and_contact_lists([list_1C, list_2C, list_1R, list_2R])
     
 
     print('A')
@@ -222,34 +225,23 @@ if __name__ == '__main__':
     print('B')
 
 
-    list_1C_full, list_2C_full, list_3C_full, contact_info_full = copy.copy(list_1C), copy.copy(list_2C), copy.copy(list_3C), copy.copy(contact_info)
+    list_1C_full, contact_info_full = copy.copy(list_1C), copy.copy(contact_info)
     erased_folder_list = []
     slct_masks = dict()
     psth_set = dict({'ALL': dict(), 'HIGH_RESP': dict()})
-    for base_region in RESPONSIVE_REGIONS + EXTENSION_REGIONS:
+    for base_region in RESPONSIVE_REGIONS + EXTENSION_REGIONS:#RESPONSIVE_REGIONS[8:9]:# + EXTENSION_REGIONS:#
         
-        list_1C, list_2C, list_3C, contact_info = copy.copy(list_1C_full), copy.copy(list_2C_full), copy.copy(list_3C_full), copy.copy(contact_info_full)
+        list_1C, contact_info = copy.copy(list_1C_full), copy.copy(contact_info_full)
         print('\n', base_region)
 
         #
         if SELECT_BY_REGION:
-            # responsive_list = ['cuneus', 'pericalcarine', 'postcentral', 'precentral', 'lingual',
-            #                 'superiorparietal', 'inferiortemporal', 'middletemporal', 'fusiform', 'lateraloccipital']
-            # early_list = ['pericalcarine-R', 'cuneus-R', 'lingual-R', 'lateraloccipital-R', 'pericalcarine-L', 'cuneus-L', 'lingual-L', 'lateraloccipital-L']
-            # mid_list = ['fusiform-R', 'inferiortemporal-R', 'parahippocampal-R', 'fusiform-L', 'inferiortemporal-L', 'parahippocampal-L']
-            # late_list = ['precuneus-R', 'superiorparietal-R', 'precuneus-L', 'superiorparietal-L']
-            #base_region = 'fusiform'
             region_list = [base_region + '-R', base_region + '-L']#['superiorparietal-R', 'superiorparietal-L']#early_list + mid_list
-            # _, contact_info = select_channels_by_regions(contact_info=contact_info, region_list=['fusiform-L', 'fusiform-R'])
             _, contact_info = select_channels_by_regions(contact_info=contact_info, region_list=region_list)
             contact_info_imp = contact_info
         else:
             contact_info_imp = contact_info
         list_1C, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_1C, contact_info=contact_info_imp)
-        list_2C, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_2C, contact_info=contact_info_imp)
-        list_3C, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_3C, contact_info=contact_info_imp)
-        # list_1R, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_1R, contact_info=contact_info_imp)
-        # list_2R, contact_info = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_2R, contact_info=contact_info_imp)
         #
         
         boundary_sec = np.arange(start=-5, stop=12+1e-6+3, step=0.02)#1/V_SAMP_PER_SEC)
@@ -259,60 +251,19 @@ if __name__ == '__main__':
             print('XXXXX   NO CONTACTS FOR ', base_region)
             continue
 
-        data_1C, cntct_mask = read_epoch_files_by_list(list_1C, first_epoch=0, last_epoch=EPOCHS_TO_READ, norm_per_epoch=True,
+        data_1C, cntct_mask, epoch_count = read_all_epoch_files_by_list(list_1C, norm_per_epoch=True,
                                                     boundary_sec=boundary_sec, random_shift=False, norm_baseline=[-5, 15])#[-0.5, -0.05])#
+        data_1C = adaptive_epoch_ave(data_1C, epoch_count, tgt_num_epochs=4)
+
+        # data_1C, cntct_mask = read_all_epoch_files_by_list(list_1C, first_epoch=0, last_epoch=EPOCHS_TO_READ, norm_per_epoch=True,
+        #                                             boundary_sec=boundary_sec, random_shift=False, norm_baseline=[-5, 15])#[-0.5, -0.05])#
         print('C')
 
-        # if WITHIN_SESSION_PROCESS:
-        #     scnd_start_idx = WITHIN_SESSION_SEGMENT_SIZE * WITHIN_SESSION_PAIR_IDX
-        #     data_2C = data_1C[scnd_start_idx:scnd_start_idx+WITHIN_SESSION_SEGMENT_SIZE]
-        #     data_1C = data_1C[:WITHIN_SESSION_SEGMENT_SIZE]
-        #     # data_2R = data_1R[scnd_start_idx:scnd_start_idx+WITHIN_SESSION_SEGMENT_SIZE]
-        #     # data_1R = data_1R[:WITHIN_SESSION_SEGMENT_SIZE]
-        # else:
-        #     data_2C, cntct_mask_2 = read_epoch_files_by_list(list_2C, first_epoch=0, last_epoch=EPOCHS_TO_READ, norm_per_epoch=True,
-        #                                                      boundary_sec=boundary_sec, random_shift=False, norm_baseline=[5, 15])#[-0.5, -0.05])#
-        #     # data_2R, _ = read_epoch_files_by_list(list_2R, first_epoch=0, last_epoch=18, norm_per_epoch=True,
-        #     #                                       boundary_sec=boundary_sec, random_shift=True, verbose=False, norm_baseline=[5, 15])#[-0.5, -0.05])#
-        #     cntct_mask = cntct_mask * cntct_mask_2
-
-        if NUM_SESSIONS == 1:
-            data_2C = np.copy(data_1C)
-            data_3C = np.copy(data_1C)
-        if NUM_SESSIONS >= 2:
-            data_2C, cntct_mask_2 = read_epoch_files_by_list(list_2C, first_epoch=0, last_epoch=EPOCHS_TO_READ, norm_per_epoch=True,
-                                                            boundary_sec=boundary_sec, random_shift=False, norm_baseline=[5, 15])#[-0.5, -0.05])#
-            cntct_mask = cntct_mask * cntct_mask_2
-            data_3C = np.copy(data_2C)
-        if NUM_SESSIONS == 3:
-            data_3C, cntct_mask_3 = read_epoch_files_by_list(list_3C, first_epoch=0, last_epoch=EPOCHS_TO_READ, norm_per_epoch=True,
-                                                            boundary_sec=boundary_sec, random_shift=False, norm_baseline=[5, 15])#[-0.5, -0.05])#
-            cntct_mask = cntct_mask * cntct_mask_3
 
         data_1C = data_1C[:, cntct_mask, :]
-        data_2C = data_2C[:, cntct_mask, :]
-        data_3C = data_3C[:, cntct_mask, :]
-        # data_1R = data_1R[:, cntct_mask, :]
-        # data_2R = data_2R[:, cntct_mask, :]
         contact_info = [contact_info[i] for i in np.argwhere(cntct_mask).flatten().astype(int)]
         
 
-        if X_CNCT_CNTCTS:
-            if NUM_SESSIONS == 2:
-                data_1C = np.concatenate((data_1C, data_2C), axis=1)
-                data_2C, data_3C = data_1C, data_1C
-                contact_info = contact_info + contact_info
-            if NUM_SESSIONS == 3:
-                data_1C = np.concatenate((data_1C, data_2C, data_3C), axis=1)
-                data_2C, data_3C = data_1C, data_1C
-                contact_info = contact_info + contact_info + contact_info
-        if X_CNCT_EPOCHS:
-            if NUM_SESSIONS == 2:
-                data_1C = np.concatenate((data_1C, data_2C), axis=0)
-                data_2C, data_3C = data_1C, data_1C
-            if NUM_SESSIONS == 3:
-                data_1C = np.concatenate((data_1C, data_2C, data_3C), axis=0)
-                data_2C, data_3C = data_1C, data_1C
             
         
         for USE in ['ALL', 'NON_RESP', 'RESP', 'HIGH_RESP']:
@@ -343,20 +294,20 @@ if __name__ == '__main__':
                     epoch_subset = epoch_subset[int(data_1C.shape[0] / 2):] if SELECT_BY_EPOCHS == 'second' else epoch_subset
                     #
                     _, _, _, _, _,  _, contact_info_, slct_mask = \
-                        get_contact_subset(data_1C[epoch_subset], data_2C[epoch_subset], data_3C[epoch_subset], 
-                                           data_1C[epoch_subset], data_2C[epoch_subset], data_3C[epoch_subset], 
+                        get_contact_subset(data_1C[epoch_subset], data_1C[epoch_subset], data_1C[epoch_subset], 
+                                           data_1C[epoch_subset], data_1C[epoch_subset], data_1C[epoch_subset], 
                                            contact_info, boundary_sec=boundary_sec, USE=USE, SPLIT=SPLIT)
-                    #
-                    epoch_subset = np.arange(data_1C.shape[0])
-                    epoch_subset = epoch_subset[1::2] if CALC_BY_EPOCHS == 'odd' else epoch_subset
-                    epoch_subset = epoch_subset[::2] if CALC_BY_EPOCHS == 'even' else epoch_subset
-                    epoch_subset = epoch_subset[:int(data_1C.shape[0] / 2)] if CALC_BY_EPOCHS == 'first' else epoch_subset
-                    epoch_subset = epoch_subset[int(data_1C.shape[0] / 2):] if CALC_BY_EPOCHS == 'second' else epoch_subset
-                    #
+                    # #
+                    # epoch_subset = np.arange(data_1C.shape[0])
+                    # epoch_subset = epoch_subset[1::2] if CALC_BY_EPOCHS == 'odd' else epoch_subset
+                    # epoch_subset = epoch_subset[::2] if CALC_BY_EPOCHS == 'even' else epoch_subset
+                    # epoch_subset = epoch_subset[:int(data_1C.shape[0] / 2)] if CALC_BY_EPOCHS == 'first' else epoch_subset
+                    # epoch_subset = epoch_subset[int(data_1C.shape[0] / 2):] if CALC_BY_EPOCHS == 'second' else epoch_subset
+                    # #
                     data_1C_ = data_1C[epoch_subset][:, slct_mask]
-                    data_2C_ = data_2C[epoch_subset][:, slct_mask]
-                    data_3C_ = data_3C[epoch_subset][:, slct_mask]
-                    print(data_1C_.shape, data_2C_.shape, data_3C_.shape, len(contact_info_))
+                    # data_2C_ = data_2C[epoch_subset][:, slct_mask]
+                    # data_3C_ = data_3C[epoch_subset][:, slct_mask]
+                    # print(data_1C_.shape, data_2C_.shape, data_3C_.shape, len(contact_info_))
                     slct_masks[base_region] = slct_mask
                 #
                 
@@ -364,15 +315,15 @@ if __name__ == '__main__':
                     continue
                 
 
-                for event in ['CNTDWN', 'RECALL']:
+                for event in ['CNTDWN']:#, 'RECALL']:
 
                     if event == 'CNTDWN':
-                        data_1_, data_2_, data_3_ = data_1C_, data_2C_, data_3C_
-                    if event == 'RECALL':
-                        if PROCESS_RECALL:
-                            data_1_, data_2_ = data_1R_, data_2R_
-                        else:
-                            continue
+                        data_1_ = data_1C_
+                    # if event == 'RECALL':
+                    #     if PROCESS_RECALL:
+                    #         data_1_ = data_1R_
+                    #     else:
+                    #         continue
                         
                     output_folder = os.path.join('{} sessions'.format(NUM_SESSIONS), 
                                                 'selectby_{}_calc_{}'.format(SELECT_BY_EPOCHS, CALC_BY_EPOCHS),
@@ -385,22 +336,10 @@ if __name__ == '__main__':
                         psth_by_cntct_1 = data_1_.mean(axis=0)
                         psth_all_1 = psth_by_cntct_1.mean(axis=0)
                         psth_all_sem_1 = psth_by_cntct_1.std(axis=0) / np.sqrt(psth_by_cntct_1.shape[0])
-                        psth_by_cntct_2 = data_2_.mean(axis=0)
-                        psth_all_2 = psth_by_cntct_2.mean(axis=0)
-                        psth_all_sem_2 = psth_by_cntct_2.std(axis=0) / np.sqrt(psth_by_cntct_2.shape[0])
-                        psth_by_cntct_3 = data_3_.mean(axis=0)
-                        psth_all_3 = psth_by_cntct_3.mean(axis=0)
-                        psth_all_sem_3 = psth_by_cntct_3.std(axis=0) / np.sqrt(psth_by_cntct_2.shape[0])
                     if SEM_BY_EPOCH:
                         psth_by_epoch_1 = data_1_.mean(axis=1)
                         psth_all_1 = psth_by_epoch_1.mean(axis=0)
                         psth_all_sem_1 = psth_by_epoch_1.std(axis=0) / np.sqrt(psth_by_epoch_1.shape[0])
-                        psth_by_epoch_2 = data_2_.mean(axis=1)
-                        psth_all_2 = psth_by_epoch_2.mean(axis=0)
-                        psth_all_sem_2 = psth_by_epoch_2.std(axis=0) / np.sqrt(psth_by_epoch_2.shape[0])
-                        psth_by_epoch_3 = data_3_.mean(axis=1)
-                        psth_all_3 = psth_by_epoch_3.mean(axis=0)
-                        psth_all_sem_3 = psth_by_epoch_3.std(axis=0) / np.sqrt(psth_by_epoch_2.shape[0])
                     #
                     fig, ax = plt.subplots(1, 1)
                     # ax.bar((boundary_sec[:-1] + boundary_sec[1:]) / 2, psth_all, width=1/V_SAMP_PER_SEC)
@@ -410,18 +349,7 @@ if __name__ == '__main__':
                                     np.log(np.maximum(psth_all_1 - psth_all_sem_1, 1e-6)),
                                     np.log(np.maximum(psth_all_1 + psth_all_sem_1, 1e-6)), color=line1.get_color(), alpha=0.2)
                     psth_set[USE][base_region] = [[psth_all_1, psth_all_sem_1]]
-                    if NUM_SESSIONS >= 2:
-                        line2, = ax.plot((boundary_sec[:-1] + boundary_sec[1:]) / 2, np.log(psth_all_2), label='sess 2')
-                        ax.fill_between((boundary_sec[:-1] + boundary_sec[1:]) / 2,
-                                        np.log(np.maximum(psth_all_2 - psth_all_sem_2, 1e-6)),
-                                        np.log(np.maximum(psth_all_2 + psth_all_sem_2, 1e-6)), color=line2.get_color(), alpha=0.2) 
-                        psth_set[USE][base_region].append([psth_all_2, psth_all_sem_2])               
-                    if NUM_SESSIONS >= 3:
-                        line3, = ax.plot((boundary_sec[:-1] + boundary_sec[1:]) / 2, np.log(psth_all_3), label='sess 3')
-                        ax.fill_between((boundary_sec[:-1] + boundary_sec[1:]) / 2,
-                                        np.log(np.maximum(psth_all_3 - psth_all_sem_3, 1e-6)),
-                                        np.log(np.maximum(psth_all_3 + psth_all_sem_3, 1e-6)), color=line3.get_color(), alpha=0.2)    
-                        psth_set[USE][base_region].append([psth_all_3, psth_all_sem_3])            
+
                     ax.set_ylim((-0.1, 0.3))
                     ax.grid(True)
                     ax.legend()
@@ -429,14 +357,12 @@ if __name__ == '__main__':
                     mysavefig(name='PSTH  ({})'.format(base_region), subfolder=output_folder, fig=fig)
                     mysavedata(subfolder=output_folder, name='PSTH', data=dict({'boundary_sec': boundary_sec,
                                                                                 'psth_1': psth_all_1, 'psth_sem_1': psth_all_sem_1,
-                                                                                'psth_2': psth_all_2, 'psth_sem_2': psth_all_sem_2,
+                                                                                #'psth_2': psth_all_2, 'psth_sem_2': psth_all_sem_2,
                                                                                 'slct_masks': slct_masks, 'psth_set': psth_set}))
                     #
                     # save contact list and info
                     region_list_1C, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_1C, contact_info=contact_info_)
-                    region_list_2C, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_2C, contact_info=contact_info_)
-                    region_list_3C, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_3C, contact_info=contact_info_)
-                    lists = [region_list_1C, region_list_2C, region_list_3C][:NUM_SESSIONS]
+                    lists = [region_list_1C]
                     mysavedata(subfolder=output_folder, fname='contacts', name=base_region, 
                                 data=dict({'contact_lists': lists, 'contact_info': contact_info_}))
 
@@ -450,4 +376,93 @@ if __name__ == '__main__':
                         pickle.dump({'contact_info': contact_info_}, fd)
                     
 
+                    # now create RDM
+                    # parameters:
+                    FIRST_CHUNK = -5
+                    LASK_CHUNK = 15
+                    CHUNK_SIZE = 0.1#1#
+                    CHUNK_PRUNE = 1
+                    CHUNK_PHASE = 0
+                    assert CHUNK_PHASE < CHUNK_PRUNE 
+                    #
+                    from rdm_tools_new import resample_epoch, calc_rdm
+                    import seaborn as sns
+                    rdm_boundary_sec = np.arange(start=FIRST_CHUNK, stop=LASK_CHUNK, step=CHUNK_SIZE)
+                    data_1C__ = resample_epoch(data_1C_, fs=None, tscale=boundary_sec[:-1], boundary_sec=rdm_boundary_sec)
+                    data_1C__ = data_1C__[:, :, CHUNK_PHASE::CHUNK_PRUNE]
+                    #
+                    
+                    # rdm0 = calc_rdm(data_1C__[0:2], data_1C__.shape[-1], 0, 1, corr_mode='p')
+                    # rdm1 = calc_rdm(data_1C__[1:3], data_1C__.shape[-1], 0, 1, corr_mode='p')
+                    # rdm2 = calc_rdm(data_1C__[2:4], data_1C__.shape[-1], 0, 1, corr_mode='p')
+                    rdms = [calc_rdm(data_1C__[i:i+2], data_1C__.shape[-1], 0, 1, corr_mode='p') for i in range(3)]
+                    
+                    # R0_ = relative_codes(rdm0_, first=0, remove_diag=True, normalize=False)
+                    # R1_ = relative_codes(rdm1_, first=0, remove_diag=True, normalize=False)
+                    import matplotlib.ticker as ticker
+                    fig, ax = plt.subplots(1, 3, figsize=(18, 6))
+                    rdm_boundary_sec = np.round(rdm_boundary_sec, decimals=1)
+                    for i_ax in range(3):
+                        sns.heatmap(np.round(rdms[i_ax], decimals=2), ax=ax[i_ax], cbar=False, vmin=-1, vmax=1, annot=False, 
+                                    xticklabels=rdm_boundary_sec[:-1], yticklabels=rdm_boundary_sec[:-1], square=False)
+                        ax[i_ax].xaxis.set_major_locator(ticker.IndexLocator(base=10, offset=0.5))
+                        ax[i_ax].yaxis.set_major_locator(ticker.IndexLocator(base=10, offset=0.5))
+                        #
+                    fig.suptitle('rdms, chunk_size={},  {}'.format(CHUNK_SIZE, base_region))
+                    mysavefig(name=f'rdms ({base_region})', subfolder=output_folder, fig=fig)
+                    #
+                    data_1C__[0] = data_1C__.mean(axis=0)
+                    data_1C__ = data_1C__[:1]
+                    rdm = calc_rdm(data_1C__, data_1C__.shape[-1], 0, 1, corr_mode='p')
+                    fig, ax = plt.subplots(1, 1)
+                    sns.heatmap(rdm, ax=ax, cbar=True, vmin=-1, vmax=1, annot=False, 
+                                xticklabels=rdm_boundary_sec[:-1], yticklabels=rdm_boundary_sec[:-1], square=True)
+                    fig.suptitle('rdm, chunk_size={},  {}'.format(CHUNK_SIZE, base_region))
+                    ax.xaxis.set_major_locator(ticker.IndexLocator(base=10, offset=0.5))
+                    ax.yaxis.set_major_locator(ticker.IndexLocator(base=10, offset=0.5))
+                    mysavefig(name=f'rdm ({base_region})', subfolder=output_folder, fig=fig)
+                    #
+                    # partial second averaging
+                    #
+                    WINSIZE = 1#4#
+                    PERIOD = 1#4#2#
+                    WINSHIFT = 1#3#
+                    fig_rdm, ax_rdm = plt.subplots(2, 4, figsize=(16, 8))
+                    ax_rdm = np.atleast_1d(ax_rdm)
+                    [ax.axis(False) for ax in ax_rdm.flatten()]
+                    fig_rdm.suptitle(base_region)
+                    fig_rdmx, ax_rdmx = plt.subplots(2, 4, figsize=(16, 8))
+                    ax_rdmx = np.atleast_1d(ax_rdmx)
+                    [ax.axis(False) for ax in ax_rdmx.flatten()]
+                    ave_epoch_list, rdm_list, rdmx_list = [], [], []
+                    fig_rdmx.suptitle(base_region)
+                    i_ax = 0
+                    for t_start in np.arange(start=rdm_boundary_sec[0], stop=rdm_boundary_sec[-1] - WINSIZE, step=WINSHIFT):
+                        try:
+                            tmask = ((rdm_boundary_sec[:-1] >= t_start) * (rdm_boundary_sec[:-1] < t_start + PERIOD))
+                            ave_epoch = data_1C__[:, :, tmask]
+                            t1 = t_start + PERIOD 
+                            for i in range(1, int(WINSIZE / PERIOD)):
+                                t0 = t_start + i * PERIOD
+                                t1 = t0 + PERIOD
+                                tmask = ((rdm_boundary_sec[:-1] >= t0) * (rdm_boundary_sec[:-1] < t1))
+                                #print(t0, t1, tmask.sum())
+                                ave_epoch += data_1C__[:, :, tmask]
+                            ave_epoch_list.append(ave_epoch)
+                            rdm_list.append(calc_rdm(ave_epoch[-1][np.newaxis, : :], ave_epoch[-1].shape[-1], 0, 1, corr_mode='p'))
+                            sns.heatmap(rdm_list[-1], ax=ax_rdm.flatten()[i_ax], vmin=-1, vmax=1)
+                            ax_rdm.flatten()[i_ax].set_title('{:4.1f} -- {:4.1f}'.format(t_start, t1))
+                            if len(ave_epoch_list) >= 3:
+                                pair_ave = np.concatenate((ave_epoch_list[-3], ave_epoch_list[-1]), axis=0)
+                                rdmx_list.append(calc_rdm(pair_ave, ave_epoch_list[-1].shape[-1], 0, 1, corr_mode='p'))
+                                sns.heatmap(rdmx_list[-1], ax=ax_rdmx.flatten()[i_ax], vmin=-1, vmax=1)
+                                ax_rdmx.flatten()[i_ax].set_title('{:4.1f} -- {:4.1f}'.format(t_start - 2 * WINSHIFT, t1))
+                            i_ax += 1
+                        except:
+                            pass
+                    mysavefig(name=f'mult rdm ({base_region})', subfolder=output_folder, fig=fig_rdm)
+                    mysavefig(name=f'mult rdmx ({base_region})', subfolder=output_folder, fig=fig_rdmx)
+
+
+ 
  

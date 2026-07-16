@@ -529,13 +529,16 @@ if __name__ == '__main__':
         WITHIN_SESSION_SEGMENT_SIZE = 6#len(AVG_MANY_EPOCHS)
     
     LEGACY_ANALYSIS = True
-    COMB_ANALYSIS = False
+    COMB_ANALYSIS = True
     PROCESS_RECALL = False
 
     # SAVE_CONTACT_LIST = False
     # USE_CONTACT_SELECTION_FROM_FILE = True
     # #CONTACT_SELECTION_FILE_NAME = 'C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_cntdwn_{}_{}'.format(MIN_TGAP, MAX_TGAP)
     # CONTACT_SELECTION_FILE_NAME = 'C:/Users/menas/OneDrive/Desktop/openneuro/temp/contact_list_cntdwn_3_5'        
+    SELECT_BY_REGION = False
+    SELECTED_REGION = 'superiortemporal'
+    READ_CONTACT_LIST_FROM = '/home/labs/malach/sofferme/figs/2 sessions/selectby_all_calc_all'#None#
 
 
     data_availability_obj = data_availability()
@@ -545,34 +548,60 @@ if __name__ == '__main__':
     
     # prepare contact list
     # stage 1: find suitable contacts
-    
-    list_1C, list_2C, _ = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
-                                                                                           proc_type='gamma_c_60_160', event_list=['CNTDWN'], 
-                                                                                           num_epochs=EPOCHS_TO_READ, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
-    (list_1C, list_2C) = data_availability_obj.intersect_epoch_files_and_contact_lists([list_1C, list_2C])
-
-    if PROCESS_RECALL: 
-        list_1R, list_2R, _ = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
-                                                                                            proc_type='gamma_c_60_160', event_list=['RECALL'], 
+    #
+    if READ_CONTACT_LIST_FROM is not None:
+        contacts_fname_all = os.path.join(READ_CONTACT_LIST_FROM, 'CNTDWN_USE_ALL_SPLIT_ALL', 'contacts')
+        with open(contacts_fname_all, 'rb') as f:
+            contacts_all = pickle.load(f)
+        contacts_fname_high_resp = os.path.join(READ_CONTACT_LIST_FROM, 'CNTDWN_USE_HIGH_RESP_SPLIT_ALL', 'contacts')
+        with open(contacts_fname_high_resp, 'rb') as f:
+            contacts_high_resp = pickle.load(f)
+        assert (WITHIN_SESSION_PROCESS and (len(contacts_all[SELECTED_REGION]['contact_lists']) == 1)) or \
+            ((not WITHIN_SESSION_PROCESS) and (len(contacts_all[SELECTED_REGION]['contact_lists']) == 2))
+        list_1C = contacts_all[SELECTED_REGION]['contact_lists'][0]
+        list_2C = contacts_all[SELECTED_REGION]['contact_lists'][-1]
+        contact_info = contacts_all[SELECTED_REGION]['contact_info']
+        try:
+            list_1C_high_resp = contacts_high_resp[SELECTED_REGION]['contact_lists'][0]
+            list_2C_high_resp = contacts_high_resp[SELECTED_REGION]['contact_lists'][-1]
+            contact_info_high_resp = contacts_high_resp[SELECTED_REGION]['contact_info']
+            mask_high_resp = np.zeros(len(contact_info), dtype=bool)
+            for i_cntct, cntct_in_all in enumerate(contact_info):
+                for cntct_in_high_resp in contact_info_high_resp:
+                    if (cntct_in_all['subject'] == cntct_in_high_resp['subject']) and (cntct_in_all['name'] == cntct_in_high_resp['name']):
+                        mask_high_resp[i_cntct] = True                              
+        except:
+            list_1C_high_resp, list_2C_high_resp, contact_info_high_resp = [], [], []
+            mask_high_resp = np.zeros(len(contact_info), dtype=bool)
+    #
+    else:    
+        list_1C, list_2C, _ = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
+                                                                                            proc_type='gamma_c_60_160', event_list=['CNTDWN'], 
                                                                                             num_epochs=EPOCHS_TO_READ, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
-        (list_1C, list_2C, list_1R, list_2R) = data_availability_obj.intersect_epoch_files_and_contact_lists([list_1C, list_2C, list_1R, list_2R])
+        (list_1C, list_2C) = data_availability_obj.intersect_epoch_files_and_contact_lists([list_1C, list_2C])
+
+        if PROCESS_RECALL: 
+            list_1R, list_2R, _ = data_availability_obj.get_suitable_epoch_files_and_contacts(min_timegap_hrs=MIN_TGAP, max_timegap_hrs=MAX_TGAP,
+                                                                                                proc_type='gamma_c_60_160', event_list=['RECALL'], 
+                                                                                                num_epochs=EPOCHS_TO_READ, enforce_first=True, single_session=WITHIN_SESSION_PROCESS)
+            (list_1C, list_2C, list_1R, list_2R) = data_availability_obj.intersect_epoch_files_and_contact_lists([list_1C, list_2C, list_1R, list_2R])
     
 
-    print('A')
-    
-    #list_1C, list_2C, list_1R, list_2R = list_1C[:1], list_2C[:1], list_1R[:1], list_2R[:1]
-    
-    contact_info = data_availability_obj.get_contact_info(list_1C)
+        print('A')
+        
+        #list_1C, list_2C, list_1R, list_2R = list_1C[:1], list_2C[:1], list_1R[:1], list_2R[:1]
+        
+        contact_info = data_availability_obj.get_contact_info(list_1C)
+
     print('B')
     #
-    SELECT_BY_REGION = True
     if SELECT_BY_REGION:
-        responsive_list = ['cuneus', 'pericalcarine', 'postcentral', 'precentral', 'lingual',
-                           'superiorparietal', 'inferiortemporal', 'middletemporal', 'fusiform', 'lateraloccipital']
-        early_list = ['pericalcarine-R', 'cuneus-R', 'lingual-R', 'lateraloccipital-R', 'pericalcarine-L', 'cuneus-L', 'lingual-L', 'lateraloccipital-L']
-        mid_list = ['fusiform-R', 'inferiortemporal-R', 'parahippocampal-R', 'fusiform-L', 'inferiortemporal-L', 'parahippocampal-L']
-        late_list = ['precuneus-R', 'superiorparietal-R', 'precuneus-L', 'superiorparietal-L']
-        region_list = ['fusiform-R', 'fusiform-L']#['superiorparietal-R', 'superiorparietal-L']#early_list + mid_list
+        # responsive_list = ['cuneus', 'pericalcarine', 'postcentral', 'precentral', 'lingual',
+        #                    'superiorparietal', 'inferiortemporal', 'middletemporal', 'fusiform', 'lateraloccipital']
+        # early_list = ['pericalcarine-R', 'cuneus-R', 'lingual-R', 'lateraloccipital-R', 'pericalcarine-L', 'cuneus-L', 'lingual-L', 'lateraloccipital-L']
+        # mid_list = ['fusiform-R', 'inferiortemporal-R', 'parahippocampal-R', 'fusiform-L', 'inferiortemporal-L', 'parahippocampal-L']
+        # late_list = ['precuneus-R', 'superiorparietal-R', 'precuneus-L', 'superiorparietal-L']
+        region_list = [SELECTED_REGION + '-R', SELECTED_REGION + '-L']#['superiorparietal-R', 'superiorparietal-L']#early_list + mid_list
         # _, contact_info = select_channels_by_regions(contact_info=contact_info, region_list=['fusiform-L', 'fusiform-R'])
         _, contact_info = select_channels_by_regions(contact_info=contact_info, region_list=region_list)
         contact_info_imp = contact_info
@@ -582,7 +611,6 @@ if __name__ == '__main__':
     list_2C, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_2C, contact_info=contact_info_imp)
     # list_1R, _ = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_1R, contact_info=contact_info_imp)
     # list_2R, contact_info = data_availability_obj.intersect_contact_list_and_contact_info(contact_list=list_2R, contact_info=contact_info_imp)
-    #
     
     boundary_sec = np.arange(start=-5, stop=12+1e-6+3, step=0.02)#1/V_SAMP_PER_SEC)
 
@@ -602,10 +630,14 @@ if __name__ == '__main__':
         # data_1R = data_1R[:WITHIN_SESSION_SEGMENT_SIZE]
     else:
         data_2C, cntct_mask_2 = read_epoch_files_by_list(list_2C, first_epoch=0, last_epoch=EPOCHS_TO_READ, norm_per_epoch=True,
-                                                         boundary_sec=boundary_sec, random_shift=False, norm_baseline=[5, 15])#[-0.5, -0.05])#
+                                                         boundary_sec=boundary_sec, random_shift=False, norm_baseline=[0, 10])#[-0.5, -0.05])#
         # data_2R, _ = read_epoch_files_by_list(list_2R, first_epoch=0, last_epoch=18, norm_per_epoch=True,
         #                                       boundary_sec=boundary_sec, random_shift=True, verbose=False, norm_baseline=[5, 15])#[-0.5, -0.05])#
         cntct_mask = cntct_mask * cntct_mask_2
+    
+    if READ_CONTACT_LIST_FROM:
+        # disable contact selection in read functions
+        cntct_mask[:] = True
 
     data_1C = data_1C[:, cntct_mask, :]
     data_2C = data_2C[:, cntct_mask, :]
@@ -633,25 +665,21 @@ if __name__ == '__main__':
             if USE not in ['ALL', 'HIGH_RESP']:
                 continue
             
-            SLCT_CONTACTS_BY_CONTRAST = False
-            if not SLCT_CONTACTS_BY_CONTRAST:
-                # data_1C_, data_2C_, data_1R_, data_2R_, contact_info_, _ = \
-                #     get_contact_subset(data_1C, data_2C, data_1R, data_2R, contact_info, boundary_sec=boundary_sec, USE=USE, SPLIT=SPLIT)
+            if READ_CONTACT_LIST_FROM is not None:
+                if USE == 'ALL':
+                    data_1C_ = np.copy(data_1C)
+                    data_2C_ = np.copy(data_2C)
+                    contact_info_ = copy.copy(contact_info)
+                if USE == 'HIGH_RESP':
+                    contact_info_ = copy.copy(contact_info_high_resp)
+                    data_1C_ = data_1C[:, mask_high_resp]
+                    data_2C_ = data_2C[:, mask_high_resp]
+            else:
                 data_1C_, data_2C_, _, _, contact_info_, _ = \
                     get_contact_subset(data_1C, data_2C, data_1C, data_2C, contact_info, boundary_sec=boundary_sec, USE=USE, SPLIT=SPLIT)
-                #data_1C_, data_2C_ = data_1C_[:, 20:], data_2C_[:, 20:]
-                print(data_1C_.shape, data_2C_.shape, len(contact_info_))
+            #data_1C_, data_2C_ = data_1C_[:, 20:], data_2C_[:, 20:]
+            print(data_1C_.shape, data_2C_.shape, len(contact_info_))
             #
-            if SLCT_CONTACTS_BY_CONTRAST:
-                data_1C__ = resample_epoch(data_1C, fs=V_SAMP_PER_SEC, tscale=boundary_sec[:-1], boundary_sec=np.arange(start=boundary_sec[0], stop=boundary_sec[-1]+1e-6, step=1))
-                data_2C__ = resample_epoch(data_2C, fs=V_SAMP_PER_SEC, tscale=boundary_sec[:-1], boundary_sec=np.arange(start=boundary_sec[0], stop=boundary_sec[-1]+1e-6, step=1))
-                from contrast_analysis import eval_contrast
-                mask = eval_contrast(data_1C__, data_2C__, USE=USE)
-                data_1C_ = data_1C[:, mask]
-                data_2C_ = data_2C[:, mask]
-                # data_1R_ = data_1R[:, mask]
-                # data_2R_ = data_2R[:, mask]
-                contact_info_ = [contact_info[i] for i in np.argwhere(mask).flatten().astype(int)]
             
             if (USE != 'ALL') and (len(contact_info_) < 10):
                 continue
@@ -702,7 +730,22 @@ if __name__ == '__main__':
                 
 
                 if COMB_ANALYSIS:
-                    from correlation_tools_comb import my_flow
+                    from correlation_tools_comb import my_flow, make_simple_activation_correlation
+
+                    fig, ax = plt.subplots(1, 1)
+                    activation_corr_1, corr_timescale_1 = make_simple_activation_correlation(data_1C_[:16], boundary_sec=boundary_sec)
+                    ax.plot(corr_timescale_1, activation_corr_1, label='sess 1')
+                    activation_corr_2, corr_timescale_2 = make_simple_activation_correlation(data_2C_[:16], boundary_sec=boundary_sec)
+                    ax.plot(corr_timescale_2, activation_corr_2, label='sess 2')
+                    # activation_corr_1, corr_timescale_1 = make_simple_activation_correlation(data_1C_[:16], boundary_sec=boundary_sec, epoch_avg='after')
+                    # ax.plot(corr_timescale_1, activation_corr_1, label='sess 1 post-avg')
+                    # activation_corr_2, corr_timescale_2 = make_simple_activation_correlation(data_2C_[:16], boundary_sec=boundary_sec, epoch_avg='after')
+                    # ax.plot(corr_timescale_2, activation_corr_2, label='sess 2 post-avg')
+                    ax.grid(True)
+                    ax.set_ylim([-1, 1])
+                    ax.legend()
+                    fig.suptitle('activation corr in {} ({} contacts)'.format(SELECTED_REGION, data_1C_.shape[1]))
+                    mysavefig(subfolder=output_folder, name=f'plain activity corr func {SELECTED_REGION}', fig=fig)
 
                     # s0 = 0
                     # erdm_list, srdm_list, act_list = [], [], []
@@ -733,20 +776,24 @@ if __name__ == '__main__':
                                 ax_resp.plot(boundary_sec[:-1][zoom_mask], Data[:, i_ctct, zoom_mask].mean(axis=0))
                         mysavefig(name='avg_resp_sees_' + str(i_sess), fig=fig_resp)
                     #
+                    shift_step = 0.1
+                    interval = 0.1
                     erdm, srdm, act, epoch_rdm_set, session_rdm_set, act_set = my_flow(data_1C_[:16],  data_2C_[:16], 
                                                                                     boundary_sec=boundary_sec, use=use,
-                                                                                    keep_margin=keep_margin, add_margin=0, shift_step=0.02, interval=0.1)
+                                                                                    keep_margin=keep_margin, add_margin=0, 
+                                                                                    shift_step=shift_step, interval=interval)
 
                     _, _, _, epoch_rdm_set_1, session_rdm_set_1, act_set_1 = my_flow(data_1C_[:16],  data_2C_[:16], 
                                                                                     boundary_sec=boundary_sec, use=use,
-                                                                                    keep_margin=keep_margin, add_margin=0, shift_step=1, interval=1)
+                                                                                    keep_margin=keep_margin, add_margin=0, 
+                                                                                    shift_step=1, interval=1)
                     # erdm_list.append(erdm)
                     # srdm_list.append(srdm)
                     # act_list.append(act)
                     for sess in range(2):
-                        ax_erdm.plot(erdm[sess], label='shift {:4.2f}, sess {}'.format(0.02, sess))
-                        ax_srdm.plot(srdm[sess], label='shift {:4.2f}, sess {}'.format(0.02, sess))
-                        ax_act.plot(act[sess], label='shift {:4.2f}, sess {}'.format(0.02, sess))
+                        ax_erdm.plot(erdm[sess], label='shift {:4.2f}, sess {}'.format(shift_step, sess))
+                        ax_srdm.plot(srdm[sess], label='shift {:4.2f}, sess {}'.format(shift_step, sess))
+                        ax_act.plot(act[sess], label='shift {:4.2f}, sess {}'.format(shift_step, sess))
                     for ax in [ax_erdm, ax_srdm, ax_act]:
                         ax.grid(True)
                         ax.set_ylim(-0.2, 1)

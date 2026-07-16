@@ -167,3 +167,27 @@ def my_flow(data1, data2, boundary_sec, use=None, keep_margin=None, add_margin=0
     
     
     
+def make_simple_activation_correlation(data, boundary_sec, bin_duration=0.1, bin_spacing=0.1, epoch_avg='before'):
+
+    new_starts = np.arange(boundary_sec[0], boundary_sec[-1], bin_spacing)
+    prev_snap = None
+    activation_correlation = []
+    corr_timescle = []
+    for tstart in new_starts:
+        #print(tstart)
+        mask = (boundary_sec >= tstart) * (boundary_sec < tstart + bin_duration)
+        #print(mask.sum())
+        snap = data[:, :, mask[:-1]].mean(axis=-1)
+        if prev_snap is not None:
+            if epoch_avg == 'before':
+                p = pierson(snap.mean(axis=0), prev_snap.mean(axis=0))
+            if epoch_avg == 'after':
+                p = 0
+                for epoch in range(data.shape[0]):
+                    p += pierson(snap[epoch], prev_snap[epoch]) / data.shape[0]
+            activation_correlation.append(p)
+            corr_timescle.append(tstart)
+        prev_snap = snap
+    
+    return np.array(activation_correlation), np.array(corr_timescle)
+    

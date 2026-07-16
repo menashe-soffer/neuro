@@ -267,6 +267,42 @@ class data_availability:
 
         return epoch_list[first_ok], epoch_list[second_ok], epoch_list[third_ok]
     
+
+
+
+
+    def get_all_epoch_files_and_contacts(self, proc_type, event_list=[], min_num_epochs=1):
+        
+        
+        # _ , contact_list = self.get_contacts_for_2_session_gap(min_timegap_hrs=min_timegap_hrs, max_timegap_hrs=max_timegap_hrs,
+        #                                                            enforce_first=enforce_first, single_session=single_session)
+        assert len(event_list) == 1
+        
+
+        first_epoch_lists, second_spoch_lists = [], []
+        for event_type in event_list:
+            fname = os.path.join(IDXS_FOLDER, 'epochs_{}_{}.csv'.format(event_type, proc_type))
+            epoch_list = pd.read_csv(fname)
+            #
+            # decode contact list
+            for i in range(epoch_list.shape[0]):
+                epoch_list['contacts'][i] = epoch_list['contacts'][i].replace('{', '').replace('}', '').replace('"', '').replace("'", "").replace(' ', '').split(',')
+            #
+            #subject_list = np.unique(epoch_list['subject'])
+            num_epochs_in_session = epoch_list['num_epochs']
+            session_ok = num_epochs_in_session >= min_num_epochs
+            num_epochs_in_session = num_epochs_in_session[session_ok]
+            epoch_list = epoch_list[session_ok]
+            subject_list = np.unique(list(epoch_list['subject']))
+            subject_int_id = np.zeros(epoch_list.shape[0], dtype=int)
+            for idx, subject in enumerate(list(epoch_list['subject'])):
+                id = np.argwhere(subject == subject_list).flatten()
+                #print(idx, id)
+                subject_int_id[idx] = id
+        
+
+        return epoch_list, subject_int_id
+    
     
     
     
@@ -312,7 +348,8 @@ class data_availability:
         for i_info, cinfo in enumerate(contact_info):
             i_list = np.argwhere(contact_list['subject'] == cinfo['subject'])
             if i_list.size > 0:
-                i_list = int(i_list.squeeze())
+                #i_list = int(i_list.squeeze())
+                i_list = i_list.squeeze().astype(int)
                 if cinfo['name'] in contact_list.iloc[i_list]['contacts']:
                     contact_list_new.iloc[i_list]['contacts'].append(cinfo['name'])
                     mask[i_info] = True

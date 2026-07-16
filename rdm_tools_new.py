@@ -11,7 +11,7 @@ import copy
 import sklearn
 
 from data_availability_new import data_availability, contact_list_services
-from channel_selection import *
+#from channel_selection import *
 
 import logging
 # logging.basicConfig(filename='C:/Users/menas/OneDrive/Desktop/openneuro/temp/generate_rdms_wrapper.log', filemode='w', level=logging.DEBUG)
@@ -32,13 +32,13 @@ def mysavefig(subfolder=None, name=None, fig=None):
     plt.close(fig)
 
 
-def mysavedata(subfolder=None, name=None, data=None):
+def mysavedata(subfolder=None, fname='data_for_figures_11', name=None, data=None):
 
     folder = os.path.join(os.path.expanduser('~'), 'figs')
     if subfolder is not None:
         folder = os.path.join(folder, subfolder)
     os.makedirs(folder, exist_ok=True)
-    fname = os.path.join(folder, 'data_for_figures_11')
+    fname = os.path.join(folder, fname)
     if os.path.isfile(fname):
         with open(fname, 'rb') as fd:
             d = pickle.load(fd)
@@ -301,6 +301,8 @@ def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1,
                              boundary_sec=np.arange(start=-1, stop=12, step=1), norm_per_epoch=True,
                              norm_baseline=[-0.5, -0.05], random_shift=False, ovf_thd=3.5, verbose=True):
     
+    data = None
+
     # the returned array has dimensions (epoch, contact, time)
     
     if random_shift:
@@ -330,7 +332,7 @@ def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1,
         #resampled = resample_epoch(subject_signals, fs, tscale, boundary_sec + tshift)
             
         #
-        if i_subject == 0:
+        if data is None:#i_subject == 0:
             data = np.copy(resampled)
             #norms = np.linalg.norm(subject_signals[:, :, nmask], axis=-1) / np.sqrt(nmask.sum())
             norms = np.mean(subject_signals[:, :, nmask], axis=-1)
@@ -383,6 +385,140 @@ def read_epoch_files_by_list(epoch_file_list, first_epoch=0, last_epoch=1,
     # ###
     # ###
     return data, good_contact
+
+
+
+
+
+def read_all_epoch_files_by_list(epoch_file_list, 
+                                 boundary_sec=np.arange(start=-1, stop=12, step=1), norm_per_epoch=True,
+                                 norm_baseline=[-0.5, -0.05], random_shift=False, ovf_thd=3.5, verbose=True,
+                                 max_epochs_from_sess=24, max_epochs_from_contact=60):
+    
+    data = None
+
+    first_epoch, last_epoch = 0, max_epochs_from_sess
+
+    # the returned array has dimensions (epoch, contact, time)
+    
+    if random_shift:
+        np.random.seed(1)
+
+    for i_subject in range(epoch_file_list.shape[0]):
+        subject_data = epoch_file_list.iloc[i_subject]
+        fname = subject_data['filename']
+        contacts = subject_data['contacts']
+        mne_obj = mne.read_epochs(fname, verbose=False)
+        fs = mne_obj.info['sfreq']
+        tscale = mne_obj.times
+        #print(tscale[0], tscale[-1], tscale.size)
+        cmask = [name in contacts for name in mne_obj.ch_names]
+        subject_signals = mne_obj.get_data()[first_epoch:last_epoch, cmask]
+        nmask = (tscale >= norm_baseline[0]) * (tscale <= norm_baseline[-1])
+        #
+        #
+        if random_shift:
+            tol = tscale[-1] - boundary_sec[-1]
+            tshift = np.random.uniform(low=0, high=tol, size=subject_signals.shape[0])
+            resampled_ = resample_epoch(subject_signals, fs, tscale, boundary_sec[np.newaxis, :] + tshift[:, np.newaxis])
+            #nmask = (tscale - tshift >= norm_baseline[0]) * (tscale - tshift <= norm_baseline[-1])
+        else:
+            tshift = 0
+            resampled_ = resample_epoch(subject_signals, fs, tscale, boundary_sec + tshift)
+        #resampled = resample_epoch(subject_signals, fs, tscale, boundary_sec + tshift)
+            
+        #
+        resampled = np.zeros((max_epochs_from_sess, resampled_.shape[1], resampled_.shape[2]))
+        resampled[:resampled_.shape[0]] = resampled_
+        current_contacts = [epoch_file_list.iloc[i_subject]['subject'] + '-' + cntct for cntct in contacts]
+        current_norms = np.zeros((max_epochs_from_sess, resampled_.shape[1]))
+        current_norms[:subject_signals.shape[0]] = np.mean(subject_signals[:, :, nmask], axis=-1)
+        #
+        if data is None:#i_subject == 0:
+            data = np.copy(resampled)
+            #norms = np.mean(subject_signals[:, :, nmask], axis=-1)
+            norms = current_norms
+            epoch_count = [resampled_.shape[0] for i_cntct in range(resampled_.shape[1])]
+            origin = current_contacts
+        else:
+            data = np.concatenate((data, np.copy(resampled)), axis=1)
+            #norms = np.concatenate((norms, np.mean(subject_signals[:, :, nmask], axis=-1)), axis=1)
+            norms = np.concatenate((norms, current_norms), axis=1)
+            epoch_count = epoch_count + [resampled_.shape[0] for i_cntct in range(resampled_.shape[1])]
+            origin = origin + current_contacts
+        
+    # normalize
+    nominal_nf = 1 / np.median(norms[norms > 0])
+    max_nf = 3 * nominal_nf
+    nf = np.minimum(1 / norms, max_nf)
+    assert norm_per_epoch # the averaging for the other case will not work, should be fixed, it will average zeros
+    if not norm_per_epoch:
+        nf = np.tile(nf.mean(axis=0, keepdims=True), (nf.shape[0], 1))
+    data = np.repeat(nf[:, :, np.newaxis], data.shape[-1], axis=2) * data
+    
+    # detect bad contacts
+    mask_ovf = data > ovf_thd
+    #
+    # fix instead of remove
+    mask_ovf_1 = mask_ovf.sum(axis=-1)
+    for i_epc in range(data.shape[0]):
+        for i_ctct in range(data.shape[1]):
+            if mask_ovf_1[i_epc, i_ctct]:
+                local_avg = data[i_epc, i_ctct, ~mask_ovf[i_epc, i_ctct]].mean()
+                local_thd = local_avg * ovf_thd
+                fixed = data[i_epc, i_ctct] * (1 - mask_ovf[i_epc, i_ctct]) + local_thd * mask_ovf[i_epc, i_ctct]
+                # plt.plot(data[i_epc, i_ctct])
+                # plt.plot(fixed)
+                # plt.title('epoch {} contact {} size {}  local_avg={:5.2f}'.format(i_epc, i_ctct, mask_ovf_1[i_epc, i_ctct], local_avg))
+                # plt.show()
+                if mask_ovf_1[i_epc, i_ctct] < int(0.02 * data.shape[-1]):
+                    data[i_epc, i_ctct] = fixed
+                    mask_ovf[i_epc, i_ctct, :] = False
+    #
+    bad_epoch_contact = mask_ovf.sum(axis=-1) > 0
+    bad_contact = bad_epoch_contact.sum(axis=0) > 0
+    for i_epoch in range(data.shape[0]):
+        for i_cntct in range(data.shape[1]):
+            data[i_epoch, i_cntct] *= (1. - bad_epoch_contact[i_epoch, i_cntct])
+    good_contact = np.logical_not(bad_contact)
+    #data_1 = data_1[:, good_contact, :]
+    if verbose:
+        print('use {:5.1f} percent of contacts'.format(100 * good_contact.mean()))
+
+    # now its time to collect epochs from same contact
+    distinct_contacts = list(np.unique(origin))
+    num_distinct_contacts = len(distinct_contacts)
+    data_ = np.zeros((max_epochs_from_contact, num_distinct_contacts, data.shape[-1]))   
+    epoch_count_ = np.zeros(num_distinct_contacts, dtype=int)
+    good_contact_ = np.ones(num_distinct_contacts, dtype=bool)
+    for idx in range(data.shape[1]):
+        contact_id = np.argwhere([origin[idx] == c for c in distinct_contacts]).squeeze()
+        from_epoch = epoch_count_[contact_id]
+        to_epoch = min(from_epoch + epoch_count[idx], max_epochs_from_contact)
+        num_to_fill = to_epoch - from_epoch
+        data_[from_epoch:to_epoch, contact_id] = data[:num_to_fill, idx]
+        epoch_count_[contact_id] += num_to_fill
+        good_contact_[contact_id] *= good_contact[idx]
+    
+
+    # ###
+    # ###
+    # good_contact = good_contact * np.prod(1 / norms < max_nf, axis=0).astype(bool)
+    # ###
+    # ###
+    return data_, good_contact_, epoch_count_
+
+
+
+def adaptive_epoch_ave(data, epoch_count, tgt_num_epochs):
+
+    new_data = np.zeros((tgt_num_epochs, data.shape[1], data.shape[2]))
+    start_stops = np.linspace(start=0, stop=epoch_count, num=tgt_num_epochs+1).astype(int)
+    for i_cntct in range(data.shape[1]):
+        for i_ave_epoch in range(tgt_num_epochs):
+            new_data[i_ave_epoch, i_cntct] = data[start_stops[i_ave_epoch, i_cntct]:start_stops[i_ave_epoch+1, i_cntct], i_cntct].mean(axis=0)
+    
+    return new_data
 
 
 
