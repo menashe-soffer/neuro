@@ -52,10 +52,10 @@ def get_contact_subset(data_1C, data_2C, data_3C, data_1R, data_2R, data_3R,
     rr = psth_by_cntct[:, mask_response].mean(axis=-1) / psth_by_cntct[:, mask_baseline].mean(axis=-1)
     if USE == 'ALL':
         use_mask =np.ones(rr.shape, dtype='bool')
-    if USE == 'NON_RESP':
-        rr = np.maximum(rr, 1/rr)
-        thd = np.quantile(rr, 1/3)
-        use_mask = rr < thd
+    # if USE == 'NON_RESP':
+    #     rr = np.maximum(rr, 1/rr)
+    #     thd = np.quantile(rr, 1/3)
+    #     use_mask = rr < thd
     if USE == 'RESP':
         thd = np.quantile(rr, 2/3)
         thd = np.sort(rr)[::-1][min(rr.size - 1, 200)]
@@ -66,7 +66,14 @@ def get_contact_subset(data_1C, data_2C, data_3C, data_1R, data_2R, data_3R,
         if hr_type == 'max':
             thd = max(np.sort(rr)[::-1][min(rr.size - 1, max(25, int(rr.size / 3)))], 1.05)
         use_mask = rr > thd
-     #
+        print('>>>>> PICKED', use_mask.sum(), 'CONTACTS FOR', USE)
+    if USE == 'NON_RESP':
+        thd = max(np.sort(rr)[::-1][min(rr.size - 1, max(25, int(rr.size / 3)))], 1.1)
+        if hr_type == 'max':
+            thd = max(np.sort(rr)[::-1][min(rr.size - 1, max(25, int(rr.size / 3)))], 1.05)
+        use_mask = rr <= thd
+        print('>>>>> PICKED', use_mask.sum(), 'CONTACTS FOR', USE)
+    #
     data_1C_ = data_1C[:, use_mask]
     data_2C_ = data_2C[:, use_mask]
     data_3C_ = data_2C[:, use_mask]
@@ -237,7 +244,7 @@ if __name__ == '__main__':
     list_1C_full, contact_info_full = copy.copy(list_1C), copy.copy(contact_info)
     erased_folder_list = []
     slct_masks = dict()
-    psth_set = dict({'ALL': dict(), 'HIGH_RESP': dict()})
+    psth_set = dict({'ALL': dict(), 'HIGH_RESP': dict(), 'NON_RESP': dict()})
     for base_region in RESPONSIVE_REGIONS:# + EXTENSION_REGIONS:#RESPONSIVE_REGIONS[8:9]:# + EXTENSION_REGIONS:#
         
         list_1C, contact_info = copy.copy(list_1C_full), copy.copy(contact_info_full)
@@ -294,7 +301,7 @@ if __name__ == '__main__':
                 #     continue
                 if SPLIT != 'ALL':
                     continue
-                if USE not in ['ALL', 'HIGH_RESP']:
+                if USE not in ['ALL', 'HIGH_RESP', 'NON_RESP']:
                     continue
                 
                 if True:

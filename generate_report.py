@@ -288,6 +288,18 @@ from pptx import Presentation
 from pptx.util import Inches
 from pdf2image import convert_from_path
 
+import fitz  # PyMuPDF
+def convert_from_path(path):
+    
+    from PIL import Image
+
+    doc = fitz.open(path)
+    pix = doc[0].get_pixmap()
+    image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+    return [image]
+
+
 
 def make_combined_report(region):
     doc = Presentation()
@@ -296,220 +308,236 @@ def make_combined_report(region):
     for version_label, version_suffix in [('1 sessions_max', 'max'), ('1 sessions_short', 'short')]:
         VERSION = version_label
 
-        images_psth_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/CNTDWN_USE_ALL_SPLIT_ALL/PSTH*odd.pdf'))
-        images_psth_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/CNTDWN_USE_ALL_SPLIT_ALL/PSTH*odd.pdf'))
-        
-        images_psth_sel_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/PSTH*odd.pdf'))
-        images_psth_sel_odd_ctl = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/PSTH*even.pdf'))
-        images_psth_sel_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/PSTH*even.pdf'))
-        images_psth_sel_even_ctl = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/PSTH*odd.pdf'))
-        
-        # RDM files for the 4 combinations needed for Slide 3
-        images_rdm1_sel_odd_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_odd/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/ave rdm (*.pdf'))
-        images_rdm1_sel_odd_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/ave rdm (*.pdf'))
-        images_rdm1_sel_even_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_even/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/ave rdm (*.pdf'))
-        images_rdm1_sel_even_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/ave rdm (*.pdf'))
+        for INNER_FOLDER in ['CNTDWN_USE_HIGH_RESP_SPLIT_ALL', 'CNTDWN_USE_NON_RESP_SPLIT_ALL']:
 
-        # RDM files for the 4 combinations needed for Slide "correlation over entire countdown"
-        images_rdm10_sel_odd_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_odd/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/whole rdm (*.pdf'))
-        images_rdm10_sel_odd_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/whole rdm (*.pdf'))
-        images_rdm10_sel_even_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_even/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/whole rdm (*.pdf'))
-        images_rdm10_sel_even_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/whole rdm (*.pdf'))
-
-        # RDM files for the 4 combinations needed for Slide "correlations per digit phase"
-        images_rdmcomb_sel_odd_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_odd/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/comb rdms (*.pdf'))
-        images_rdmcomb_sel_odd_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/comb rdms (*.pdf'))
-        images_rdmcomb_sel_even_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_even/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/comb rdms (*.pdf'))
-        images_rdmcomb_sel_even_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/comb rdms (*.pdf'))
-
-        # RDM files for the 4 combinations needed for Slide "average over digit phase correlation"
-        images_rdmcombave_sel_odd_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_odd/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/comb rdms ave (*.pdf'))
-        images_rdmcombave_sel_odd_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/comb rdms ave (*.pdf'))
-        images_rdmcombave_sel_even_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_even/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/comb rdms ave (*.pdf'))
-        images_rdmcombave_sel_even_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/comb rdms ave (*.pdf'))
-
-        fname_odd = os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/contacts')
-        with open(fname_odd, 'rb') as f:
-            contacts_odd = pickle.load(f)
+            images_psth_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/CNTDWN_USE_ALL_SPLIT_ALL/PSTH*odd.pdf'))
+            images_psth_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/CNTDWN_USE_ALL_SPLIT_ALL/PSTH*odd.pdf'))
             
-        fname_even = os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/CNTDWN_USE_HIGH_RESP_SPLIT_ALL/contacts')
-        with open(fname_even, 'rb') as f:
-            contacts_even = pickle.load(f)
-
-        if region not in contacts_odd or region not in contacts_even:
-            print(f"Region {region} not found in contacts for {VERSION}")
-            continue
-
-        tmp_image_path = os.path.join(TEMP_FOLDER, 'temp_image.jpg')
-
-        odd_cntct = [c['subject'] + ' ' + c['name'] for c in contacts_odd[region]['contact_info']]
-        even_cntct = [c['subject'] + ' ' + c['name'] for c in contacts_even[region]['contact_info']]
-        mutual_cntct = list(set(odd_cntct).intersection(set(even_cntct)))
-        smat = np.array([[len(odd_cntct), len(mutual_cntct)], [len(mutual_cntct), len(even_cntct)]])
-        
-        # Helper function to safely add a new slide depending on presentation API setup
-        def my_new_slide(prs, slide_title):
-            blank_slide_layout = prs.slide_layouts[6]
-            slide = prs.slides.add_slide(blank_slide_layout)
-            title_box = slide.shapes.add_textbox(Inches(0.25), Inches(0.25), Inches(10.75), Inches(0.8))
-            tf = title_box.text_frame
-            tf.word_wrap = True
-            p = tf.paragraphs[0]
-            p.text = slide_title
-            p.font.bold = True
-            p.font.color.rgb = RGBColor(0, 51, 153)  # Professional Dark Blue
-            p.font.name = 'Arial'  # Clean distinct sans-serif font
-            p.font.size = Pt(20)   # Prominent title size
-            return slide
-        
-
-        if np.trace(smat) >= 15:
-            fig, ax = plt.subplots(1, 1)
-            sns.heatmap(smat, ax=ax, annot=True, cbar=False)
-            ax.set_title('select consistency: {:5.1f}%'.format(100 * np.trace(np.fliplr(smat)) / np.trace(smat)))
-            image_stream = io.BytesIO()
-            plt.savefig(image_stream, format="png", bbox_inches="tight", dpi=300)
-            plt.close(fig)  
-            image_stream.seek(0)        
-            slide = my_new_slide(doc, slide_title='{} (select {})'.format(region, version_suffix))
-            slide.shapes.add_picture(image_stream, left=Inches(2.0), top=Inches(2), width=Inches(5.5))
-
-        # Slide: PSTH overview
-        slide = my_new_slide(doc, slide_title='{} (select {})'.format(region, version_suffix))
-        
-        path_psth_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in images_psth_sel_odd]).squeeze()
-        if path_psth_idx.size > 0:
-            idx = int(path_psth_idx) if path_psth_idx.ndim == 0 else int(path_psth_idx.item())
-            psth_path = images_psth_sel_odd[idx]
-            image = convert_from_path(psth_path)
-            image[0].save(tmp_image_path, 'JPEG', quality=85)
-            slide.shapes.add_picture(tmp_image_path, Inches(0.25), Inches(1.25), width=Inches(4))
-            slide.shapes.add_textbox(Inches(1.25), Inches(1.15), Inches(2.5), Inches(0.4)).text_frame.text = "odd epochs"
-        
-        path_psth_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in images_psth_sel_odd_ctl]).squeeze()
-        if path_psth_idx.size > 0:
-            idx = int(path_psth_idx) if path_psth_idx.ndim == 0 else int(path_psth_idx.item())
-            psth_path = images_psth_sel_odd_ctl[idx]
-            image = convert_from_path(psth_path)
-            image[0].save(tmp_image_path, 'JPEG', quality=85)
-            slide.shapes.add_picture(tmp_image_path, Inches(0.25), Inches(4.75), width=Inches(2.5))
-            slide.shapes.add_textbox(Inches(0.35), Inches(4.30), Inches(2.5), Inches(0.4)).text_frame.text = "even epochs (ctrl)"
+            images_psth_sel_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/' + INNER_FOLDER + '/PSTH*odd.pdf'))
+            images_psth_sel_odd_ctl = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/' + INNER_FOLDER + '/PSTH*even.pdf'))
+            images_psth_sel_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/' + INNER_FOLDER + '/PSTH*even.pdf'))
+            images_psth_sel_even_ctl = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/' + INNER_FOLDER + '/PSTH*odd.pdf'))
             
-        path_psth_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in images_psth_odd]).squeeze()
-        if path_psth_idx.size > 0:
-            idx = int(path_psth_idx) if path_psth_idx.ndim == 0 else int(path_psth_idx.item())
-            psth_path = images_psth_odd[idx]
-            image = convert_from_path(psth_path)
-            image[0].save(tmp_image_path, 'JPEG', quality=85)
-            slide.shapes.add_picture(tmp_image_path, Inches(2.5), Inches(5.5), width=Inches(2.5))
-            slide.shapes.add_textbox(Inches(2.6), Inches(5.15), Inches(2.5), Inches(0.4)).text_frame.text = "ALL CONTACTS"
-        
-        path_psth_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in images_psth_sel_even]).squeeze()
-        if path_psth_idx.size > 0:
-            idx = int(path_psth_idx) if path_psth_idx.ndim == 0 else int(path_psth_idx.item())
-            psth_path = images_psth_sel_even[idx]
-            image = convert_from_path(psth_path)
-            image[0].save(tmp_image_path, 'JPEG', quality=85)
-            slide.shapes.add_picture(tmp_image_path, Inches(5.5), Inches(1.25), width=Inches(4))
-            slide.shapes.add_textbox(Inches(6.25), Inches(1.15), Inches(2.5), Inches(0.4)).text_frame.text = "even epochs"
-        
-        path_psth_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in images_psth_sel_even_ctl]).squeeze()
-        if path_psth_idx.size > 0:
-            idx = int(path_psth_idx) if path_psth_idx.ndim == 0 else int(path_psth_idx.item())
-            psth_path = images_psth_sel_even_ctl[idx]
-            image = convert_from_path(psth_path)
-            image[0].save(tmp_image_path, 'JPEG', quality=85)
-            slide.shapes.add_picture(tmp_image_path, Inches(5.25), Inches(4.75), width=Inches(2.5))
-            slide.shapes.add_textbox(Inches(5.5), Inches(4.30), Inches(2.5), Inches(0.4)).text_frame.text = "odd epochs (ctrl)"
+            # RDM files for the 4 combinations needed for Slide 3
+            images_rdm1_sel_odd_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_odd/' + INNER_FOLDER + '/ave rdm (*.pdf'))
+            images_rdm1_sel_odd_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/' + INNER_FOLDER + '/ave rdm (*.pdf'))
+            images_rdm1_sel_even_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_even/' + INNER_FOLDER + '/ave rdm (*.pdf'))
+            images_rdm1_sel_even_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/' + INNER_FOLDER + '/ave rdm (*.pdf'))
+
+            # RDM files for the 4 combinations needed for Slide "correlation over entire countdown"
+            images_rdm10_sel_odd_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_odd/' + INNER_FOLDER + '/whole rdm (*.pdf'))
+            images_rdm10_sel_odd_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/' + INNER_FOLDER + '/whole rdm (*.pdf'))
+            images_rdm10_sel_even_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_even/' + INNER_FOLDER + '/whole rdm (*.pdf'))
+            images_rdm10_sel_even_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/' + INNER_FOLDER + '/whole rdm (*.pdf'))
+
+            # RDM files for the 4 combinations needed for Slide "correlations per digit phase"
+            images_rdmcomb_sel_odd_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_odd/' + INNER_FOLDER + '/comb rdms (*.pdf'))
+            images_rdmcomb_sel_odd_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/' + INNER_FOLDER + '/comb rdms (*.pdf'))
+            images_rdmcomb_sel_even_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_even/' + INNER_FOLDER + '/comb rdms (*.pdf'))
+            images_rdmcomb_sel_even_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/' + INNER_FOLDER + '/comb rdms (*.pdf'))
+
+            # RDM files for the 4 combinations needed for Slide "average over digit phase correlation"
+            images_rdmcombave_sel_odd_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_odd/' + INNER_FOLDER + '/comb rdms ave (*.pdf'))
+            images_rdmcombave_sel_odd_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/' + INNER_FOLDER + '/comb rdms ave (*.pdf'))
+            images_rdmcombave_sel_even_calc_even = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_even/' + INNER_FOLDER + '/comb rdms ave (*.pdf'))
+            images_rdmcombave_sel_even_calc_odd = glob.glob(os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/' + INNER_FOLDER + '/comb rdms ave (*.pdf'))
+
+            fname_odd = os.path.join(FIG_FOLDER, VERSION, 'selectby_odd_calc_even/' + INNER_FOLDER + '/contacts')
+            with open(fname_odd, 'rb') as f:
+                contacts_odd = pickle.load(f)
+                
+            fname_even = os.path.join(FIG_FOLDER, VERSION, 'selectby_even_calc_odd/' + INNER_FOLDER + '/contacts')
+            with open(fname_even, 'rb') as f:
+                contacts_even = pickle.load(f)
+
+            if region not in contacts_odd or region not in contacts_even:
+                print(f"Region {region} not found in contacts for {VERSION} in {INNER_FOLDER}")
+                continue
+
+            tmp_image_path = os.path.join(TEMP_FOLDER, 'temp_image.jpg')
+
+            odd_cntct = [c['subject'] + ' ' + c['name'] for c in contacts_odd[region]['contact_info']]
+            even_cntct = [c['subject'] + ' ' + c['name'] for c in contacts_even[region]['contact_info']]
+            mutual_cntct = list(set(odd_cntct).intersection(set(even_cntct)))
+            smat = np.array([[len(odd_cntct), len(mutual_cntct)], [len(mutual_cntct), len(even_cntct)]])
             
-            path_psth_idx_all = np.argwhere([path.find('(' + region + ')') > -1 for path in images_psth_even]).squeeze()
-            if path_psth_idx_all.size > 0:
-                idx_all = int(path_psth_idx_all) if path_psth_idx_all.ndim == 0 else int(path_psth_idx_all.item())
-                psth_path_all = images_psth_odd[idx_all]
-                image_all = convert_from_path(psth_path_all)
-                image_all[0].save(tmp_image_path, 'JPEG', quality=85)
-                slide.shapes.add_picture(tmp_image_path, Inches(7.5), Inches(5.5), width=Inches(2.5))
-                slide.shapes.add_textbox(Inches(7.6), Inches(5.15), Inches(2.5), Inches(0.4)).text_frame.text = "ALL CONTACTS"
+            # Helper function to safely add a new slide depending on presentation API setup
+            def my_new_slide(prs, slide_title, theme=None):
+                from pptx.enum.text import PP_ALIGN
+                blank_slide_layout = prs.slide_layouts[6]
+                slide = prs.slides.add_slide(blank_slide_layout)
+                #
+                if theme is not None:
+                    bg_color = RGBColor(255, 255, 223)
+                    # --- Set Slide Background Color ---
+                    background = slide.background
+                    fill = background.fill
+                    fill.solid()
+                    fill.fore_color.rgb = bg_color
+                    #
+                    slide_title = slide_title + '\n(non reponsive contacts)'
+                #
+                title_box = slide.shapes.add_textbox(Inches(0.25), Inches(0.25), Inches(10.75), Inches(0.8))
+                tf = title_box.text_frame
+                tf.word_wrap = True
+                p = tf.paragraphs[0]
+                p.text = slide_title
+                p.font.bold = True
+                p.font.color.rgb = RGBColor(0, 51, 153)  # Professional Dark Blue
+                p.font.name = 'Arial'  # Clean distinct sans-serif font
+                p.font.size = Pt(20)   # Prominent title size
+                p.alignment = PP_ALIGN.CENTER
+                return slide
+            
+            theme = None if INNER_FOLDER == 'CNTDWN_USE_HIGH_RESP_SPLIT_ALL' else 1
 
-        # Slide: Correlation inside average digit (2x2 grid)
-        slide = my_new_slide(doc, slide_title='{} , correlation inside average digit (select {})'.format(region, version_suffix))
-        
-        grid_configs_rdm1 = [
-            (images_rdm1_sel_odd_calc_odd, Inches(0.5), Inches(1.0), "sel: odd, calc: odd"),
-            (images_rdm1_sel_odd_calc_even, Inches(5.2), Inches(1.0), "sel: odd, calc: even"),
-            (images_rdm1_sel_even_calc_even, Inches(0.5), Inches(4.0), "sel: even, calc: even"),
-            (images_rdm1_sel_even_calc_odd, Inches(5.2), Inches(4.0), "sel: even, calc: odd")
-        ]
+            if np.trace(smat) >= 15:
+                fig, ax = plt.subplots(1, 1)
+                sns.heatmap(smat, ax=ax, annot=True, cbar=False)
+                ax.set_title('select consistency: {:5.1f}%'.format(100 * np.trace(np.fliplr(smat)) / np.trace(smat)))
+                image_stream = io.BytesIO()
+                plt.savefig(image_stream, format="png", bbox_inches="tight", dpi=300)
+                plt.close(fig)  
+                image_stream.seek(0)        
+                slide = my_new_slide(doc, slide_title='{} (select {})'.format(region, version_suffix), theme=theme)
+                slide.shapes.add_picture(image_stream, left=Inches(2.0), top=Inches(2), width=Inches(5.5))
 
-        for img_list, left_pos, top_pos, subtitle_text in grid_configs_rdm1:
-            path_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in img_list]).squeeze()
-            if path_idx.size > 0:
-                idx = int(path_idx) if path_idx.ndim == 0 else int(path_idx.item())
-                rdm_path = img_list[idx]
-                image = convert_from_path(rdm_path)
+            # Slide: PSTH overview
+            slide = my_new_slide(doc, slide_title='{} (select {})'.format(region, version_suffix), theme=theme)
+            
+            path_psth_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in images_psth_sel_odd]).squeeze()
+            if path_psth_idx.size > 0:
+                idx = int(path_psth_idx) if path_psth_idx.ndim == 0 else int(path_psth_idx.item())
+                psth_path = images_psth_sel_odd[idx]
+                image = convert_from_path(psth_path)
                 image[0].save(tmp_image_path, 'JPEG', quality=85)
-                slide.shapes.add_picture(tmp_image_path, left_pos, top_pos + Inches(0.15), width=Inches(4.2))
-                slide.shapes.add_textbox(left_pos, top_pos, Inches(4.2), Inches(0.4)).text_frame.text = subtitle_text
-
-        # Slide: Correlation over entire countdown (2x2 grid)
-        slide = my_new_slide(doc, slide_title='{} , correlation over entire countdown (select {})'.format(region, version_suffix))
-        
-        grid_configs_rdm10 = [
-            (images_rdm10_sel_odd_calc_odd, Inches(0.5), Inches(1.0), "sel: odd, calc: odd"),
-            (images_rdm10_sel_odd_calc_even, Inches(5.2), Inches(1.0), "sel: odd, calc: even"),
-            (images_rdm10_sel_even_calc_even, Inches(0.5), Inches(4.0), "sel: even, calc: even"),
-            (images_rdm10_sel_even_calc_odd, Inches(5.2), Inches(4.0), "sel: even, calc: odd")
-        ]
-
-        for img_list, left_pos, top_pos, subtitle_text in grid_configs_rdm10:
-            path_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in img_list]).squeeze()
-            if path_idx.size > 0:
-                idx = int(path_idx) if path_idx.ndim == 0 else int(path_idx.item())
-                rdm_path = img_list[idx]
-                image = convert_from_path(rdm_path)
+                slide.shapes.add_picture(tmp_image_path, Inches(0.25), Inches(1.25), width=Inches(4))
+                slide.shapes.add_textbox(Inches(1.25), Inches(1.15), Inches(2.5), Inches(0.4)).text_frame.text = "odd epochs"
+            
+            path_psth_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in images_psth_sel_odd_ctl]).squeeze()
+            if path_psth_idx.size > 0:
+                idx = int(path_psth_idx) if path_psth_idx.ndim == 0 else int(path_psth_idx.item())
+                psth_path = images_psth_sel_odd_ctl[idx]
+                image = convert_from_path(psth_path)
                 image[0].save(tmp_image_path, 'JPEG', quality=85)
-                slide.shapes.add_picture(tmp_image_path, left_pos, top_pos + Inches(0.15), width=Inches(4.2))
-                slide.shapes.add_textbox(left_pos, top_pos, Inches(4.2), Inches(0.4)).text_frame.text = subtitle_text
-
-        # Slide: Correlations per digit phase (2x2 grid)
-        slide = my_new_slide(doc, slide_title='{} , correlations per digit phase (select {})'.format(region, version_suffix))
-        
-        grid_configs_rdmcomb = [
-            (images_rdmcomb_sel_odd_calc_odd, Inches(0.5), Inches(1.0), "sel: odd, calc: odd"),
-            (images_rdmcomb_sel_odd_calc_even, Inches(5.2), Inches(1.0), "sel: odd, calc: even"),
-            (images_rdmcomb_sel_even_calc_even, Inches(0.5), Inches(4.0), "sel: even, calc: even"),
-            (images_rdmcomb_sel_even_calc_odd, Inches(5.2), Inches(4.0), "sel: even, calc: odd")
-        ]
-
-        for img_list, left_pos, top_pos, subtitle_text in grid_configs_rdmcomb:
-            path_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in img_list]).squeeze()
-            if path_idx.size > 0:
-                idx = int(path_idx) if path_idx.ndim == 0 else int(path_idx.item())
-                rdm_path = img_list[idx]
-                image = convert_from_path(rdm_path)
+                slide.shapes.add_picture(tmp_image_path, Inches(0.25), Inches(4.75), width=Inches(2.5))
+                slide.shapes.add_textbox(Inches(0.35), Inches(4.30), Inches(2.5), Inches(0.4)).text_frame.text = "even epochs (ctrl)"
+                
+            path_psth_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in images_psth_odd]).squeeze()
+            if path_psth_idx.size > 0:
+                idx = int(path_psth_idx) if path_psth_idx.ndim == 0 else int(path_psth_idx.item())
+                psth_path = images_psth_odd[idx]
+                image = convert_from_path(psth_path)
                 image[0].save(tmp_image_path, 'JPEG', quality=85)
-                slide.shapes.add_picture(tmp_image_path, left_pos - Inches(0.3), top_pos + Inches(0.3), width=Inches(4.5))
-                slide.shapes.add_textbox(left_pos, top_pos, Inches(4.2), Inches(0.4)).text_frame.text = subtitle_text
-
-        # Slide: Average over digit phase correlation (2x2 grid, updated from adaptation of digit fragments average)
-        slide = my_new_slide(doc, slide_title='{} , average over digit phase correlation (select {})'.format(region, version_suffix))
-        
-        grid_configs_rdmcombave = [
-            (images_rdmcombave_sel_odd_calc_odd, Inches(0.5), Inches(1.0), "sel: odd, calc: odd"),
-            (images_rdmcombave_sel_odd_calc_even, Inches(5.2), Inches(1.0), "sel: odd, calc: even"),
-            (images_rdmcombave_sel_even_calc_even, Inches(0.5), Inches(4.0), "sel: even, calc: even"),
-            (images_rdmcombave_sel_even_calc_odd, Inches(5.2), Inches(4.0), "sel: even, calc: odd")
-        ]
-
-        for img_list, left_pos, top_pos, subtitle_text in grid_configs_rdmcombave:
-            path_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in img_list]).squeeze()
-            if path_idx.size > 0:
-                idx = int(path_idx) if path_idx.ndim == 0 else int(path_idx.item())
-                rdm_path = img_list[idx]
-                image = convert_from_path(rdm_path)
+                slide.shapes.add_picture(tmp_image_path, Inches(2.5), Inches(5.5), width=Inches(2.5))
+                slide.shapes.add_textbox(Inches(2.6), Inches(5.15), Inches(2.5), Inches(0.4)).text_frame.text = "ALL CONTACTS"
+            
+            path_psth_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in images_psth_sel_even]).squeeze()
+            if path_psth_idx.size > 0:
+                idx = int(path_psth_idx) if path_psth_idx.ndim == 0 else int(path_psth_idx.item())
+                psth_path = images_psth_sel_even[idx]
+                image = convert_from_path(psth_path)
                 image[0].save(tmp_image_path, 'JPEG', quality=85)
-                slide.shapes.add_picture(tmp_image_path, left_pos, top_pos + Inches(0.15), width=Inches(4.2))
-                slide.shapes.add_textbox(left_pos, top_pos, Inches(4.2), Inches(0.4)).text_frame.text = subtitle_text
+                slide.shapes.add_picture(tmp_image_path, Inches(5.5), Inches(1.25), width=Inches(4))
+                slide.shapes.add_textbox(Inches(6.25), Inches(1.15), Inches(2.5), Inches(0.4)).text_frame.text = "even epochs"
+            
+            path_psth_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in images_psth_sel_even_ctl]).squeeze()
+            if path_psth_idx.size > 0:
+                idx = int(path_psth_idx) if path_psth_idx.ndim == 0 else int(path_psth_idx.item())
+                psth_path = images_psth_sel_even_ctl[idx]
+                image = convert_from_path(psth_path)
+                image[0].save(tmp_image_path, 'JPEG', quality=85)
+                slide.shapes.add_picture(tmp_image_path, Inches(5.25), Inches(4.75), width=Inches(2.5))
+                slide.shapes.add_textbox(Inches(5.5), Inches(4.30), Inches(2.5), Inches(0.4)).text_frame.text = "odd epochs (ctrl)"
+                
+                path_psth_idx_all = np.argwhere([path.find('(' + region + ')') > -1 for path in images_psth_even]).squeeze()
+                if path_psth_idx_all.size > 0:
+                    idx_all = int(path_psth_idx_all) if path_psth_idx_all.ndim == 0 else int(path_psth_idx_all.item())
+                    psth_path_all = images_psth_odd[idx_all]
+                    image_all = convert_from_path(psth_path_all)
+                    image_all[0].save(tmp_image_path, 'JPEG', quality=85)
+                    slide.shapes.add_picture(tmp_image_path, Inches(7.5), Inches(5.5), width=Inches(2.5))
+                    slide.shapes.add_textbox(Inches(7.6), Inches(5.15), Inches(2.5), Inches(0.4)).text_frame.text = "ALL CONTACTS"
+
+            # Slide: Correlation inside average digit (2x2 grid)
+            slide = my_new_slide(doc, slide_title='{} , correlation inside average digit (select {})'.format(region, version_suffix), theme=theme)
+            
+            grid_configs_rdm1 = [
+                (images_rdm1_sel_odd_calc_odd, Inches(0.5), Inches(1.0), "sel: odd, calc: odd"),
+                (images_rdm1_sel_odd_calc_even, Inches(5.2), Inches(1.0), "sel: odd, calc: even"),
+                (images_rdm1_sel_even_calc_even, Inches(0.5), Inches(4.0), "sel: even, calc: even"),
+                (images_rdm1_sel_even_calc_odd, Inches(5.2), Inches(4.0), "sel: even, calc: odd")
+            ]
+
+            for img_list, left_pos, top_pos, subtitle_text in grid_configs_rdm1:
+                path_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in img_list]).squeeze()
+                if path_idx.size > 0:
+                    idx = int(path_idx) if path_idx.ndim == 0 else int(path_idx.item())
+                    rdm_path = img_list[idx]
+                    image = convert_from_path(rdm_path)
+                    image[0].save(tmp_image_path, 'JPEG', quality=85)
+                    slide.shapes.add_picture(tmp_image_path, left_pos, top_pos + Inches(0.15), width=Inches(4.2))
+                    slide.shapes.add_textbox(left_pos, top_pos, Inches(4.2), Inches(0.4)).text_frame.text = subtitle_text
+
+            # Slide: Correlation over entire countdown (2x2 grid)
+            slide = my_new_slide(doc, slide_title='{} , correlation over entire countdown (select {})'.format(region, version_suffix), theme=theme)
+            
+            grid_configs_rdm10 = [
+                (images_rdm10_sel_odd_calc_odd, Inches(0.5), Inches(1.0), "sel: odd, calc: odd"),
+                (images_rdm10_sel_odd_calc_even, Inches(5.2), Inches(1.0), "sel: odd, calc: even"),
+                (images_rdm10_sel_even_calc_even, Inches(0.5), Inches(4.0), "sel: even, calc: even"),
+                (images_rdm10_sel_even_calc_odd, Inches(5.2), Inches(4.0), "sel: even, calc: odd")
+            ]
+
+            for img_list, left_pos, top_pos, subtitle_text in grid_configs_rdm10:
+                path_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in img_list]).squeeze()
+                if path_idx.size > 0:
+                    idx = int(path_idx) if path_idx.ndim == 0 else int(path_idx.item())
+                    rdm_path = img_list[idx]
+                    image = convert_from_path(rdm_path)
+                    image[0].save(tmp_image_path, 'JPEG', quality=85)
+                    slide.shapes.add_picture(tmp_image_path, left_pos, top_pos + Inches(0.15), width=Inches(4.2))
+                    slide.shapes.add_textbox(left_pos, top_pos, Inches(4.2), Inches(0.4)).text_frame.text = subtitle_text
+
+            # Slide: Correlations per digit phase (2x2 grid)
+            slide = my_new_slide(doc, slide_title='{} , correlations per digit phase (select {})'.format(region, version_suffix), theme=theme)
+            
+            grid_configs_rdmcomb = [
+                (images_rdmcomb_sel_odd_calc_odd, Inches(0.5), Inches(1.0), "sel: odd, calc: odd"),
+                (images_rdmcomb_sel_odd_calc_even, Inches(5.2), Inches(1.0), "sel: odd, calc: even"),
+                (images_rdmcomb_sel_even_calc_even, Inches(0.5), Inches(4.0), "sel: even, calc: even"),
+                (images_rdmcomb_sel_even_calc_odd, Inches(5.2), Inches(4.0), "sel: even, calc: odd")
+            ]
+
+            for img_list, left_pos, top_pos, subtitle_text in grid_configs_rdmcomb:
+                path_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in img_list]).squeeze()
+                if path_idx.size > 0:
+                    idx = int(path_idx) if path_idx.ndim == 0 else int(path_idx.item())
+                    rdm_path = img_list[idx]
+                    image = convert_from_path(rdm_path)
+                    image[0].save(tmp_image_path, 'JPEG', quality=85)
+                    slide.shapes.add_picture(tmp_image_path, left_pos - Inches(0.3), top_pos + Inches(0.3), width=Inches(4.5))
+                    slide.shapes.add_textbox(left_pos, top_pos, Inches(4.2), Inches(0.4)).text_frame.text = subtitle_text
+
+            # Slide: Average over digit phase correlation (2x2 grid, updated from adaptation of digit fragments average)
+            slide = my_new_slide(doc, slide_title='{} , average over digit phase correlation (select {})'.format(region, version_suffix), theme=theme)
+            
+            grid_configs_rdmcombave = [
+                (images_rdmcombave_sel_odd_calc_odd, Inches(0.5), Inches(1.0), "sel: odd, calc: odd"),
+                (images_rdmcombave_sel_odd_calc_even, Inches(5.2), Inches(1.0), "sel: odd, calc: even"),
+                (images_rdmcombave_sel_even_calc_even, Inches(0.5), Inches(4.0), "sel: even, calc: even"),
+                (images_rdmcombave_sel_even_calc_odd, Inches(5.2), Inches(4.0), "sel: even, calc: odd")
+            ]
+
+            for img_list, left_pos, top_pos, subtitle_text in grid_configs_rdmcombave:
+                path_idx = np.argwhere([path.find('(' + region + ')') > -1 for path in img_list]).squeeze()
+                if path_idx.size > 0:
+                    idx = int(path_idx) if path_idx.ndim == 0 else int(path_idx.item())
+                    rdm_path = img_list[idx]
+                    image = convert_from_path(rdm_path)
+                    image[0].save(tmp_image_path, 'JPEG', quality=85)
+                    slide.shapes.add_picture(tmp_image_path, left_pos, top_pos + Inches(0.15), width=Inches(4.2))
+                    slide.shapes.add_textbox(left_pos, top_pos, Inches(4.2), Inches(0.4)).text_frame.text = subtitle_text
         
     output_filename = f'29-6-26-{region}.pptx'
     doc.save(os.path.join(TEMP_FOLDER, output_filename))
