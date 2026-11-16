@@ -298,7 +298,7 @@ class data_availability:
             for idx, subject in enumerate(list(epoch_list['subject'])):
                 id = np.argwhere(subject == subject_list).flatten()
                 #print(idx, id)
-                subject_int_id[idx] = id
+                subject_int_id[idx] = id.item()
         
 
         return epoch_list, subject_int_id

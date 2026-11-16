@@ -111,6 +111,7 @@ def calc_rdm(data, rdm_size, pre_ignore, delta_time_smple, corr_mode='p'):
     rdm = np.zeros((rdm_size, rdm_size))  # {random group, time(1), time(2)}
     for t1 in range(rdm_size):
         for t2 in range(rdm_size):
+            #print('here4', t1, t2)
             sig1 = data[src0, :, pre_ignore + t1 * delta_time_smple:pre_ignore + (t1 + 1) * delta_time_smple].flatten()
             sig2 = data[src1, :, pre_ignore + t2 * delta_time_smple:pre_ignore + (t2 + 1) * delta_time_smple].flatten()
             if sig1.size > 1:
@@ -291,7 +292,6 @@ def resample_epoch(data, fs, tscale, boundary_sec):
         # resampled_temp = resampled_mean_flat.reshape(E, B, C)
         # resampled_final = resampled_temp.transpose(0, 2, 1)
         # resampled = resampled_final
-
 
     return resampled
 
