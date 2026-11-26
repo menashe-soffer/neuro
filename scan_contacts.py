@@ -152,7 +152,7 @@ ALL_REGIONS = ['bankssts', 'caudalanteriorcingulate', 'caudalmiddlefrontal', 'cu
                'lingual', 'medialorbitofrontal', 'middletemporal', 'mix', 'paracentral', 'parahippocampal', 'parsopercularis',
                'parsorbitalis', 'parstriangularis', 'pericalcarine', 'postcentral', 'posteriorcingulate', 'precentral', 'precuneus',
                'rostralanteriorcingulate', 'rostralmiddlefrontal', 'superiorfrontal', 'superiorparietal', 'superiortemporal',
-               'supramarginal', 'temporalpole', 'transversetemporal'][:4]
+               'supramarginal', 'temporalpole', 'transversetemporal']
 
 RESPONSIVE_REGIONS = ['cuneus', 'pericalcarine', 'postcentral', 'precentral', 'lingual', 'superiorparietal', 
                       'inferiortemporal', 'middletemporal', 'fusiform', 'lateraloccipital']
@@ -182,42 +182,42 @@ from nilearn import datasets, plotting
 from nilearn.surface import load_surf_mesh
 
 # Standard Desikan-Killiany (aparc) base name -> Destrieux (aparc.a2009s) label(s)
-APARC_TO_DESTRIEUX = {
-    "bankssts": ["S_temporal_sup", "G_temp_sup-Lateral"],
-    "caudalanteriorcingulate": ["G_and_S_cingul-Mid-Ant", "G_and_S_cingul-Ant"],
-    "caudalmiddlefrontal": ["G_front_middle", "S_front_sup"],
-    "cuneus": ["G_cuneus"],
-    "entorhinal": ["G_oc-temp_med-Parahip", "Pole_temporal"],
-    "frontalpole": ["G_front_sup", "G_and_S_frontomargin"],
-    "fusiform": ["G_oc-temp_lat-fusifor"],
-    "inferiorparietal": ["G_pariet_inf-Angular", "G_pariet_inf-Supramar"],
-    "inferiortemporal": ["G_temporal_inf"],
-    "insula": ["G_Ins_lg_and_S_cent_ins", "G_insular_short"],
-    "isthmuscingulate": ["G_cingul-Post-ventral", "G_cingul-Post-dorsal"],
-    "lateraloccipital": ["G_occipital_middle", "S_oc_middle_and_Lunatus"],
-    "lateralorbitofrontal": ["G_orbital", "G_front_inf-Orbital"],
-    "lingual": ["G_oc-temp_med-Lingual"],
-    "medialorbitofrontal": ["G_rectus", "G_orbital"],
-    "middletemporal": ["G_temporal_middle"],
-    "paracentral": ["G_and_S_paracentral"],
-    "parahippocampal": ["G_oc-temp_med-Parahip"],
-    "parsopercularis": ["G_front_inf-Opercular"],
-    "parsorbitalis": ["G_front_inf-Orbital"],
-    "parstriangularis": ["G_front_inf-Triangul"],
-    "pericalcarine": ["S_calcarine"],
-    "postcentral": ["G_postcentral"],
-    "posteriorcingulate": ["G_cingul-Post-dorsal", "G_and_S_cingul-Mid-Post"],
-    "precentral": ["G_precentral"],
-    "precuneus": ["G_precuneus"],
-    "rostralanteriorcingulate": ["G_and_S_cingul-Ant"],
-    "rostralmiddlefrontal": ["G_front_middle", "G_and_S_frontomargin"],
-    "superiorfrontal": ["G_front_sup"],
-    "superiorparietal": ["G_parietal_sup"],
-    "superiortemporal": ["G_temp_sup-Lateral", "G_temp_sup-Plan_tempo"],
-    "supramarginal": ["G_pariet_inf-Supramar"],
-    "temporalpole": ["Pole_temporal"],
-    "transversetemporal": ["G_temp_sup-G_T_transv"],
-}
+# APARC_TO_DESTRIEUX = {
+#     "bankssts": ["S_temporal_sup", "G_temp_sup-Lateral"],
+#     "caudalanteriorcingulate": ["G_and_S_cingul-Mid-Ant", "G_and_S_cingul-Ant"],
+#     "caudalmiddlefrontal": ["G_front_middle", "S_front_sup"],
+#     "cuneus": ["G_cuneus"],
+#     "entorhinal": ["G_oc-temp_med-Parahip", "Pole_temporal"],
+#     "frontalpole": ["G_front_sup", "G_and_S_frontomargin"],
+#     "fusiform": ["G_oc-temp_lat-fusifor"],
+#     "inferiorparietal": ["G_pariet_inf-Angular", "G_pariet_inf-Supramar"],
+#     "inferiortemporal": ["G_temporal_inf"],
+#     "insula": ["G_Ins_lg_and_S_cent_ins", "G_insular_short"],
+#     "isthmuscingulate": ["G_cingul-Post-ventral", "G_cingul-Post-dorsal"],
+#     "lateraloccipital": ["G_occipital_middle", "S_oc_middle_and_Lunatus"],
+#     "lateralorbitofrontal": ["G_orbital", "G_front_inf-Orbital"],
+#     "lingual": ["G_oc-temp_med-Lingual"],
+#     "medialorbitofrontal": ["G_rectus", "G_orbital"],
+#     "middletemporal": ["G_temporal_middle"],
+#     "paracentral": ["G_and_S_paracentral"],
+#     "parahippocampal": ["G_oc-temp_med-Parahip"],
+#     "parsopercularis": ["G_front_inf-Opercular"],
+#     "parsorbitalis": ["G_front_inf-Orbital"],
+#     "parstriangularis": ["G_front_inf-Triangul"],
+#     "pericalcarine": ["S_calcarine"],
+#     "postcentral": ["G_postcentral"],
+#     "posteriorcingulate": ["G_cingul-Post-dorsal", "G_and_S_cingul-Mid-Post"],
+#     "precentral": ["G_precentral"],
+#     "precuneus": ["G_precuneus"],
+#     "rostralanteriorcingulate": ["G_and_S_cingul-Ant"],
+#     "rostralmiddlefrontal": ["G_front_middle", "G_and_S_frontomargin"],
+#     "superiorfrontal": ["G_front_sup"],
+#     "superiorparietal": ["G_parietal_sup"],
+#     "superiortemporal": ["G_temp_sup-Lateral", "G_temp_sup-Plan_tempo"],
+#     "supramarginal": ["G_pariet_inf-Supramar"],
+#     "temporalpole": ["Pole_temporal"],
+#     "transversetemporal": ["G_temp_sup-G_T_transv"],
+# }
 
 
 def _parse_region_and_hemi(raw_name: str):
@@ -236,121 +236,6 @@ def _clean_key(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", name.lower())
 
 
-def create_region_legend_movie(
-    regions,
-    stat_map_left=None,
-    global_vmax=None,
-    out_path="left_hemi_regions.png",):
-
-    if stat_map_left is not None:
-        global_vmax = stat_map_left.max() if global_vmax is None else global_vmax
-    
-    fsaverage = datasets.fetch_surf_fsaverage("fsaverage5")
-    destrieux = datasets.fetch_atlas_surf_destrieux()
-
-    coords, _ = load_surf_mesh(fsaverage["infl_left"])
-    roi_map = destrieux["map_left"]
-    raw_labels = [
-        lbl.decode("utf-8") if isinstance(lbl, bytes) else str(lbl)
-        for lbl in destrieux["labels"]
-    ]
-
-    # Build lookup from cleaned Destrieux label -> region index
-    atlas_lookup = {}
-    for i, atlas_lbl in enumerate(raw_labels):
-        if atlas_lbl in {"Unknown", "Medial_wall"} or not np.any(roi_map == i):
-            continue
-        atlas_lookup[_clean_key(atlas_lbl)] = (i, atlas_lbl)
-
-    selected_idx = []
-    selected_names = []
-    unmatched = []
-
-    for req in regions:
-        req_str = str(req)
-        base_name, hemi = _parse_region_and_hemi(req_str)
-
-        # Keep left-hemisphere (or unspecified hemisphere) regions for the left-hemisphere plot
-        if hemi == "right":
-            continue
-
-        base_key = _clean_key(base_name)
-        candidate_destrieux = APARC_TO_DESTRIEUX.get(base_key, [])
-
-        # Flexible fallback: if not in explicit table, try matching tokens/substrings
-        if not candidate_destrieux and base_key:
-            for c_key, (_, c_raw) in atlas_lookup.items():
-                if base_key in c_key or c_key in base_key:
-                    candidate_destrieux.append(c_raw)
-
-        matched_any = False
-        for d_name in candidate_destrieux:
-            entry = atlas_lookup.get(_clean_key(d_name))
-            if entry is not None:
-                idx, _ = entry
-                if idx not in selected_idx:
-                    selected_idx.append(idx)
-                    selected_names.append(req_str)
-                matched_any = True
-
-        if not matched_any:
-            unmatched.append(req_str)
-
-    if unmatched:
-        print(f"Unmatched regions ({len(unmatched)}): {unmatched}")
-
-    fig, ax = plt.subplots(subplot_kw={"projection": "3d"}, figsize=(8, 8))
-
-    if stat_map_left is not None:
-        plotting.plot_surf_stat_map(
-            surf_mesh=fsaverage["infl_left"],
-            stat_map=stat_map_left,
-            hemi="left",
-            view="lateral",
-            vmax=global_vmax,
-            axes=ax,
-            colorbar=True,
-        )
-    else:
-        plotting.plot_surf_roi(
-            surf_mesh=fsaverage["infl_left"],
-            roi_map=np.zeros(coords.shape[0], dtype=int),
-            hemi="left",
-            view="lateral",
-            axes=ax,
-            bg_map=fsaverage["sulc_left"],
-            cmap="gray",
-            alpha=0.0,
-        )
-
-    if selected_idx:
-        plotting.plot_surf_contours(
-            surf_mesh=fsaverage["infl_left"],
-            roi_map=roi_map,
-            levels=selected_idx,
-            labels=selected_names,
-            colors=["k"] * len(selected_idx),
-            axes=ax,
-            legend=False,
-        )
-
-        for idx, disp_name in zip(selected_idx, selected_names):
-            verts = np.where(roi_map == idx)[0]
-            cx, cy, cz = coords[verts].mean(axis=0)
-            ax.text(
-                cx, cy, cz,
-                disp_name,
-                fontsize=7,
-                color="black",
-                weight="bold",
-                ha="center",
-                va="center",
-                bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.7),
-            )
-
-    plt.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
-
 
     
 
@@ -362,25 +247,21 @@ def visualize_index_per_region(regions, values, fig_base_name='brain map'):
     fs_dir = mne.datasets.fetch_fsaverage(verbose=False)
     subjects_dir = fs_dir.parent
     subject = 'fsaverage'
+    fsaverage = datasets.fetch_surf_fsaverage(subject)
 
     # load Labels for atlas Desikan-Killiany (aparc) for both hemispheres
     labels = mne.read_labels_from_annot(subject, parc='aparc', subjects_dir=subjects_dir)
 
-    # brain = Brain(subject, hemi='both', surf='inflated', subjects_dir=subjects_dir)
-
-    # for i_region, region in enumerate(regions):
-    #     for label in labels:
-    #         base_name = label.name.rsplit('-', 1)[0]
-    #         if region == base_name:
-    #             #print(region, label)
-    #             brain.add_label(label, color=None, values=values[i_region], colormap='jet')
-
-    # brain.show()
-    # brain.save_movie(os.path.join(FIG_FOLDER, 'brain_rotation.mp4'), time_dilation=20, fps=30)
 
     n_verts = 163842
     stat_map_lh = np.zeros(n_verts)
     stat_map_rh = np.zeros(n_verts)
+    #
+    labels_lh, centers_lh = [], []
+    labels_rh, centers_rh = [], []
+    coords_lh, faces_rh = load_surf_mesh(fsaverage.infl_left)
+    coords_rh, faces_rh = load_surf_mesh(fsaverage.infl_right)
+
 
     for i_region, region in enumerate(regions):
         for label in labels:
@@ -389,18 +270,13 @@ def visualize_index_per_region(regions, values, fig_base_name='brain map'):
                 val = values[i_region]
                 if label.hemi == 'lh':
                     stat_map_lh[label.vertices] = val
+                    centers_lh.append(coords_lh[label.vertices].mean(axis=0))
+                    labels_lh.append(region)
                 elif label.hemi == 'rh':
                     stat_map_rh[label.vertices] = val
+                    centers_rh.append(coords_rh[label.vertices].mean(axis=0))
+                    labels_rh.append(region)
 
-    # INCLUDE_ANNOTATION = True
-    # if INCLUDE_ANNOTATION:
-    #     # Fetch the Destrieux surface atlas (provides region names and vertex maps)
-    #     destrieux = datasets.fetch_atlas_surf_destrieux()
-
-    #     # Region names list (strings) and vertex maps for each hemisphere
-    #     region_names = destrieux['labels']
-    #     destrieux_left = destrieux['map_left']
-    #     destrieux_right = destrieux['map_right']
 
     fsaverage = datasets.fetch_surf_fsaverage('fsaverage')
 
@@ -413,8 +289,17 @@ def visualize_index_per_region(regions, values, fig_base_name='brain map'):
         bg_map=fsaverage.sulc_left, colorbar=True, cmap='jet', vmin=vmin, vmax=vmax, cbar_tick_format='%.1f',
         title=fig_base_name + ' Left Hemisphere'#, figure=axes[0]
     )
+
+    ax3d = fig_lh.axes[0]
+    for (region, center) in zip(labels_lh, centers_lh):
+        x, y, z = center
+        if True:#x > -2.0:
+            ax3d.text(x, y, z, region, fontsize=4, color="black", ha="center", va="center",
+                    bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.5))
+
     fig_lh.savefig(os.path.join(FIG_FOLDER, '{} lh.png'.format(fig_base_name)), dpi=300)
     plt.close()
+
 
     # right hemisphere
     fig_rh = plotting.plot_surf_stat_map(
@@ -422,6 +307,15 @@ def visualize_index_per_region(regions, values, fig_base_name='brain map'):
         bg_map=fsaverage.sulc_right, colorbar=True, cmap='jet', vmin=vmin, vmax=vmax, cbar_tick_format='%.1f',
         title=fig_base_name + ' Right Hemisphere'#, figure=axes[1]
     )
+
+    ax3d = fig_rh.axes[0]
+    for (region, center) in zip(labels_rh, centers_rh):
+        x, y, z = center
+        if True:#x < 2.0:
+            ax3d.text(x, y, z, region, fontsize=4, color="black", ha="center", va="center",
+                    bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.5))
+
+
     fig_rh.savefig(os.path.join(FIG_FOLDER, '{} rh.png'.format(fig_base_name)), dpi=300)
     plt.close()
 
@@ -695,7 +589,7 @@ if __name__ == '__main__':
     destrieux_left = destrieux['map_left']
     destrieux_right = destrieux['map_right']
 
-    create_region_legend_movie(np.array([[r + '-R', r + '-L'] for r in ALL_REGIONS]).flatten(), stat_map_left=pwr_1)
+    #create_region_legend_movie(np.array([[r + '-R', r + '-L'] for r in ALL_REGIONS]).flatten(), stat_map_left=pwr_1)
     visualize_index_per_region(regions=regions, values=pwr_1, fig_base_name='power 1Hz plain')
     visualize_index_per_region(regions=regions, values=pwr_01, fig_base_name='power 0.1Hz plain')
     # visualize_index_per_region(regions=regions, values=val_period, fig_base_name='periodicity indicator')
