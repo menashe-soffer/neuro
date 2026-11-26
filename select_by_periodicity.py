@@ -71,16 +71,16 @@ def contact_subset_by_periodicity(data, boundary_sec, contact_info, USE, gen_deb
         prof[i_cntct] /= prof[i_cntct].max()
 
     # multires averaging
-    levels = 5 * 2 ** np.array([0, 0.5, 1, 1.5, 2, 2.5, 3])
-    levels = 5 * 2 ** np.array([1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3])
+    #levels = 5 * 2 ** np.array([0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3])
+    levels = 5 * 2 ** np.array([0.5, 1, 1.5, 2, 2.5, 3])
     lengths = ((i1 - i0) / levels).astype(int)
-    rel_shfts = np.concatenate(([0], np.diff(lengths / 2).astype(int)))
     prof2d = []
     for i_cntct in range(data.shape[1]):
         results = []
-        for length, rel_shft in zip(lengths, rel_shfts):
+        for length in lengths:
             # ker = np.ones(length) / length
-            ker = np.concatenate(([1], np.zeros(length), [-1])) * 500 / length
+            #ker = np.concatenate(([1], np.zeros(length), [-1])) * 500 / (np.sqrt(lengths.min()) * np.sqrt(length))
+            ker = np.concatenate(([1], np.zeros(length), [-1])) / np.sqrt(length)
             results.append(np.maximum(np.convolve(ker, prof[i_cntct], mode='same'), 0))    
         prof2d.append(np.array(results))
 
@@ -98,10 +98,11 @@ def contact_subset_by_periodicity(data, boundary_sec, contact_info, USE, gen_deb
     dtct = dtct * ( f > 0.25)
     #
     dtct_start = np.zeros_like(dtct).astype(bool)
+    dtct_start_val = np.zeros_like(dtct)
     for i_cntct in range(data.shape[1]):
-        dtct_start[i_cntct] = (prof2d[i_cntct][:, :int(fs*2)].max() > 4-2) * (prof2d[i_cntct][:, int(fs*3):].max() < prof2d[i_cntct][:, :int(fs*2)].max() / 2)
+        dtct_start[i_cntct] = (prof2d[i_cntct][:, :int(fs*2)].max() > 0.02) * (prof2d[i_cntct][:, int(fs*3):].max() < prof2d[i_cntct][:, :int(fs*2)].max() / 2)
+        dtct_start_val[i_cntct] = np.maximum((prof2d[i_cntct][:, :int(fs*2)].max() - 1) / 2, 0)
 
-    dtct_start_val = prof2d[i_cntct][:, :int(fs*3)].max() - prof2d[i_cntct][:, int(fs*3):].max()
     dtct_periodicity_val = dtct * f * 2
     #print('{}  {}   {:5.3f}    {:5.3f}  {}    {:5.3f}'.format(dtct[-1], peak_id, f[-1], dtct_periodicity_val[-1], dtct_start[-1], dtct_start_val))
 
@@ -118,7 +119,7 @@ def contact_subset_by_periodicity(data, boundary_sec, contact_info, USE, gen_deb
             if (not show_only_positiove) or dtct[i_cntct] or dtct_start[i_cntct]:
                 fig, ax = plt.subplots(3, 2, figsize=(16, 8))
                 ax = ax.flatten()
-                ax[0].plot(tscale, psth[i_cntct][i0:i1], label='psth', linewidth=2)
+                ax[0].plot(tscale_onset, psth[i_cntct][i0_onset:i1_onset], label='psth', linewidth=2)
                 # ax[0].plot(tscale, normalized_psth[i_cntct][i0:i1], label='normed', linewidth=0.5)
                 # ax[0].plot(tscale, smoothed_psth[i_cntct][i0:i1], label='smthed', linewidth=0.5)
                 #ax[0].grid(True)
@@ -132,16 +133,16 @@ def contact_subset_by_periodicity(data, boundary_sec, contact_info, USE, gen_deb
                 ax[1].plot(xcorr[i_cntct, :350], label=str(dtct[i_cntct]) + ' ' + str(peak_id[i_cntct]))
                 ax[1].legend()
                 ax[1].set_ylabel('auto-corr')
-                ax[3].plot(psth[i_cntct][i0_onset:i1_onset] / psth[i_cntct][i0_onset:i1_onset].max())
-                ax[3].plot(prof[i_cntct] / prof[i_cntct].max())
+                ax[3].plot(tscale_onset, psth[i_cntct][i0_onset:i1_onset] / psth[i_cntct][i0_onset:i1_onset].max())
+                ax[3].plot(tscale_onset, prof[i_cntct] / prof[i_cntct].max())
                 idxs = np.arange(5, 500)
                 #ax[3].plot(idxs, prof[i_cntct][idxs] * 0.1 * 500 / idxs)
                 ax[3].set_ylabel('profile')
                 ax[3].legend([str((prof[i_cntct] / prof[i_cntct].max())[100])])
                 sns.heatmap(prof2d[i_cntct], ax=ax[4])
                 ax[4].set_ylabel('2D profile')
-                ax[5].plot(tscale_onset, prof2d[i_cntct].T, label=str(dtct_start[i_cntct]))
-                ax[5].legend()
+                ax[5].plot(tscale_onset, prof2d[i_cntct].T)#, label=str(dtct_start[i_cntct]))
+                ax[5].legend(['{:3.2f}'.format(l / fs) for l in lengths])
                 [ax_.grid(True) for ax_ in ax]
                 #
                 dtct_type = 'none'
@@ -162,7 +163,7 @@ def contact_subset_by_periodicity(data, boundary_sec, contact_info, USE, gen_deb
         dtct = np.logical_not(dtct)
     contact_info = [contact_info[i] for i in np.argwhere(dtct).flatten().astype(int)]
 
-    return contact_info, dtct, dtct_start, dtct_start_val, dtct_periodicity_val
+    return contact_info, dtct, dtct_start, dtct_start_val.mean(), dtct_periodicity_val
 
 
 
